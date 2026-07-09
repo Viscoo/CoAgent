@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { cwd as processCwd, exit, stdout } from "node:process";
 import { SdkOpenCodeAdapter } from "./adapters/opencode-adapter.js";
@@ -18,27 +18,25 @@ interface ParsedArgs {
 async function main(argv: string[]): Promise<void> {
   const parsed = parseArgs(argv);
   const command = parsed.command;
+  const cwd = stringFlag(parsed, "cwd") ?? processCwd();
 
   if (command === "version" || command === "--version" || command === "-v") {
     console.log(`coagent v${VERSION}`);
     return;
   }
 
-  if (command === "help" || command === "--help" || command === "-h" || !command) {
+  if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
     return;
   }
 
-  const cwd = stringFlag(parsed, "cwd") ?? processCwd();
-  const useReal = stringFlag(parsed, "opencode-url") || booleanFlag(parsed, "start-server");
-  const adapter = useReal
-    ? new SdkOpenCodeAdapter({
-        cwd,
-        baseUrl: stringFlag(parsed, "opencode-url"),
-        startServer: booleanFlag(parsed, "start-server"),
-      })
-    : new MockAdapter({ failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0") });
-  const adapterLabel = useReal ? "OpenCode" : "Mock";
+  // No args → open interactive CoAgent session
+  if (!command) {
+    await startInteractiveSession(parsed, cwd);
+    return;
+  }
+
+  const adapter = buildAdapter(parsed, cwd);
   const options: OrchestratorOptions = {
     cwd,
     maxConcurrency: Number(stringFlag(parsed, "concurrency") ?? "2"),
@@ -67,7 +65,7 @@ async function main(argv: string[]): Promise<void> {
   if (command === "run") {
     const goal = requireGoal(parsed);
     const run = await orchestrator.run(goal);
-    console.log(""); // newline after progress output
+    console.log("");
     printRun(run, "Run finished");
     return;
   }
@@ -124,7 +122,6 @@ async function main(argv: string[]): Promise<void> {
           },
           signal: new AbortController().signal,
         });
-        // The TUI runs in the foreground; we only reach here on signal/close
         return;
       } catch {
         // Fall through to chat
@@ -290,14 +287,15 @@ function printHelp(): void {
   console.log(`CoAgent v${VERSION} — Multi-agent orchestration for OpenCode
 
 Usage:
+  coagent                    Open interactive CoAgent session
   coagent init
   coagent plan "<goal>"
-  coagent run "<goal>" [--dry-run] [--start-server] [--opencode-url <url>]
+  coagent run "<goal>" [--start-server] [--opencode-url <url>]
   coagent status [run-id]
   coagent resume <run-id>
   coagent logs [run-id]
   coagent chat
-  coagent open [--opencode-url <url>]
+  coagent open
   coagent version
 
 Options:
@@ -310,9 +308,8 @@ Options:
   --mock                   Force mock adapter (default: auto when no URL given).
   --mock-failure-rate <n>  Mock adapter failure probability 0-1. Defaults to 0.
 
-Interative chat:
-  coagent chat              Open an interactive CoAgent session.
-  ctrl-c or "exit"          Leave the interactive session.
+  Type "coagent" to open the interactive session.
+  Type "exit" or ctrl-c to leave.
 `);
 }
 
@@ -326,6 +323,26 @@ async function findOpencodeBinary(): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+async function startInteractiveSession(parsed: ParsedArgs, cwd: string): Promise<void> {
+  await startChat({
+    cwd,
+    failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
+    concurrency: Number(stringFlag(parsed, "concurrency") ?? "2"),
+    retries: Number(stringFlag(parsed, "retries") ?? "2"),
+  });
+}
+
+function buildAdapter(parsed: ParsedArgs, cwd: string): import("./adapters/opencode-adapter.js").OpenCodeAdapter {
+  const useReal = stringFlag(parsed, "opencode-url") || booleanFlag(parsed, "start-server");
+  return useReal
+    ? new SdkOpenCodeAdapter({
+        cwd,
+        baseUrl: stringFlag(parsed, "opencode-url"),
+        startServer: booleanFlag(parsed, "start-server"),
+      })
+    : new MockAdapter({ failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0") });
 }
 
 const exitHandler = setupSignalHandler();

@@ -8,11 +8,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "coagent": "node dist/cli.js",
     "start": "node dist/cli.js",
+    "coagent": "node dist/cli.js",
     "dev": "npx tsx src/cli.ts",
-    "test": "npx tsx --test test/*.test.ts",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "test": "bun test",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "postinstall": "node -e \"try{require('child_process').execSync('npx opencode --version',{stdio:'pipe'})}catch(e){}\""
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.17.17",
