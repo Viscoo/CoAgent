@@ -187,7 +187,7 @@ export class Orchestrator {
         });
 
         const child = await this.adapter.createChildSession(parentSessionId, task, spec);
-        const result = await this.adapter.prompt(child.id, prompt, true);
+        const result = await this.adapter.prompt(child.id, prompt);
         const diffFiles =
           result.diffFiles.length > 0 ? result.diffFiles : await this.adapter.diff(child.id);
         const violations = this.policyGuard.validateDiff(task, spec, diffFiles);

@@ -30,14 +30,15 @@ async function main(argv: string[]): Promise<void> {
   }
 
   const cwd = stringFlag(parsed, "cwd") ?? processCwd();
-  const useMock = booleanFlag(parsed, "mock") || !stringFlag(parsed, "opencode-url");
-  const adapter = useMock
-    ? new MockAdapter({ failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0") })
-    : new SdkOpenCodeAdapter({
+  const useReal = stringFlag(parsed, "opencode-url") || booleanFlag(parsed, "start-server");
+  const adapter = useReal
+    ? new SdkOpenCodeAdapter({
         cwd,
         baseUrl: stringFlag(parsed, "opencode-url"),
         startServer: booleanFlag(parsed, "start-server"),
-      });
+      })
+    : new MockAdapter({ failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0") });
+  const adapterLabel = useReal ? "OpenCode" : "Mock";
   const options: OrchestratorOptions = {
     cwd,
     maxConcurrency: Number(stringFlag(parsed, "concurrency") ?? "2"),
