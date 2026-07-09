@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { cwd as processCwd, exit, stdout } from "node:process";
 import { SdkOpenCodeAdapter } from "./adapters/opencode-adapter.js";
 import { MockAdapter } from "./adapters/mock-adapter.js";
@@ -110,6 +113,16 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (command === "open") {
+    const opencodeSource = sourceDir(".opencode-source", "packages", "opencode");
+    if (existsSync(opencodeSource)) {
+      const args = process.argv.slice(3);
+      const cp = spawn(
+        "bun",
+        ["run", "--conditions=browser", "./src/index.ts", ...args],
+        { cwd: opencodeSource, stdio: "inherit", shell: true },
+      );
+      return new Promise((resolve) => cp.on("exit", () => resolve()));
+    }
     const opencodeBin = await findOpencodeBinary();
     if (opencodeBin) {
       try {
@@ -124,12 +137,10 @@ async function main(argv: string[]): Promise<void> {
         });
         return;
       } catch {
-        // Fall through to chat
+        // Fall through
       }
     }
-    console.log("No OpenCode binary found — starting CoAgent interactive chat instead.");
-    console.log("  (install the opencode CLI to use the native TUI)");
-    console.log("");
+    console.log("Starting CoAgent interactive session...");
     await startChat({
       cwd,
       failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
@@ -326,6 +337,18 @@ async function findOpencodeBinary(): Promise<string | undefined> {
 }
 
 async function startInteractiveSession(parsed: ParsedArgs, cwd: string): Promise<void> {
+  const opencodeSource = sourceDir(".opencode-source", "packages", "opencode");
+  if (existsSync(opencodeSource)) {
+    // Launch CoAgent TUI from modified OpenCode source
+    const args = process.argv.slice(2);
+    const cp = spawn(
+      "bun",
+      ["run", "--conditions=browser", "./src/index.ts", ...args],
+      { cwd: opencodeSource, stdio: "inherit", shell: true },
+    );
+    return new Promise((resolve) => cp.on("exit", () => resolve()));
+  }
+  // Fallback to chat REPL
   await startChat({
     cwd,
     failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
@@ -343,6 +366,11 @@ function buildAdapter(parsed: ParsedArgs, cwd: string): import("./adapters/openc
         startServer: booleanFlag(parsed, "start-server"),
       })
     : new MockAdapter({ failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0") });
+}
+
+function sourceDir(...segments: string[]): string {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  return path.join(dir, "..", ...segments);
 }
 
 const exitHandler = setupSignalHandler();
