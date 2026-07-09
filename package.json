@@ -13,10 +13,11 @@
     "dev": "npx tsx src/cli.ts",
     "test": "bun test",
     "check": "tsc -p tsconfig.json --noEmit",
-    "postinstall": "node -e \"try{require('child_process').execSync('npx opencode --version',{stdio:'pipe'})}catch(e){}\""
+    "postinstall": "node scripts/setup-opencode.mjs"
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.17.17",
+    "adm-zip": "^0.5.18",
     "opencode-ai": "^1.17.17"
   },
   "devDependencies": {

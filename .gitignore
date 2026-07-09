@@ -4,6 +4,6 @@ node_modules/
 .env
 *.log
 
-# OpenCode source (fork for CoAgent).opencode-source/
+# OpenCode source (auto-downloaded by postinstall)
+.opencode-source/
 opencode-source.zip
-
