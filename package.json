@@ -15,7 +15,8 @@
     "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "latest"
+    "@opencode-ai/sdk": "^1.17.17",
+    "opencode-ai": "^1.17.17"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
