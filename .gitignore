@@ -3,3 +3,7 @@ node_modules/
 .coagent/runs/
 .env
 *.log
+
+# OpenCode source (fork for CoAgent).opencode-source/
+opencode-source.zip
+
