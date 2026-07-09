@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
+import { execSync } from "node:child_process";
 import { cwd as processCwd, exit, stdout } from "node:process";
 import { SdkOpenCodeAdapter } from "./adapters/opencode-adapter.js";
 import { MockAdapter } from "./adapters/mock-adapter.js";
+import { startChat } from "./cli/chat.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { type CoAgentRun, type OrchestratorOptions } from "./core/types.js";
 
@@ -95,6 +97,47 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     printLogs(run);
+    return;
+  }
+
+  if (command === "chat") {
+    await startChat({
+      cwd,
+      failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
+      concurrency: options.maxConcurrency,
+      retries: options.maxRetries,
+    });
+    return;
+  }
+
+  if (command === "open") {
+    const opencodeBin = await findOpencodeBinary();
+    if (opencodeBin) {
+      try {
+        const { createOpencodeTui } = await import("@opencode-ai/sdk/server");
+        console.log("Launching OpenCode with CoAgent config...");
+        createOpencodeTui({
+          project: cwd,
+          config: {
+            model: stringFlag(parsed, "model") ?? "opencode/claude-sonnet-4-6",
+          },
+          signal: new AbortController().signal,
+        });
+        // The TUI runs in the foreground; we only reach here on signal/close
+        return;
+      } catch {
+        // Fall through to chat
+      }
+    }
+    console.log("No OpenCode binary found — starting CoAgent interactive chat instead.");
+    console.log("  (install the opencode CLI to use the native TUI)");
+    console.log("");
+    await startChat({
+      cwd,
+      failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
+      concurrency: options.maxConcurrency,
+      retries: options.maxRetries,
+    });
     return;
   }
 
@@ -252,6 +295,8 @@ Usage:
   coagent status [run-id]
   coagent resume <run-id>
   coagent logs [run-id]
+  coagent chat
+  coagent open [--opencode-url <url>]
   coagent version
 
 Options:
@@ -263,7 +308,23 @@ Options:
   --opencode-url <url>     OpenCode server base URL.
   --mock                   Force mock adapter (default: auto when no URL given).
   --mock-failure-rate <n>  Mock adapter failure probability 0-1. Defaults to 0.
+
+Interative chat:
+  coagent chat              Open an interactive CoAgent session.
+  ctrl-c or "exit"          Leave the interactive session.
 `);
+}
+
+async function findOpencodeBinary(): Promise<string | undefined> {
+  try {
+    const result = execSync(
+      process.platform === "win32" ? "where opencode 2>nul" : "which opencode 2>/dev/null",
+      { encoding: "utf8", timeout: 2000 },
+    ).trim();
+    return result || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const exitHandler = setupSignalHandler();

@@ -7,3 +7,4 @@ export * from "./core/task-graph.js";
 export * from "./core/types.js";
 export * from "./adapters/opencode-adapter.js";
 export * from "./adapters/mock-adapter.js";
+export * from "./cli/chat.js";

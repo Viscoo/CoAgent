@@ -56,6 +56,8 @@ npm run dev -- run "refactor the logger"
 | `coagent status [run-id]` | Print latest or selected run summary |
 | `coagent resume <run-id>` | Continue an incomplete run |
 | `coagent logs [run-id]` | View decision log and artifacts for a run |
+| `coagent chat` | Open an interactive CoAgent session (REPL) |
+| `coagent open` | Open CoAgent interactively (tries OpenCode TUI first, falls back to chat) |
 | `coagent version` | Print version |
 
 ### Options
