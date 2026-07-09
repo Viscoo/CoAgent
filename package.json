@@ -1,0 +1,29 @@
+{
+  "name": "coagent",
+  "version": "0.2.0",
+  "description": "A lightweight multi-agent orchestration layer for OpenCode.",
+  "type": "module",
+  "bin": {
+    "coagent": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "coagent": "node dist/cli.js",
+    "start": "node dist/cli.js",
+    "dev": "npx tsx src/cli.ts",
+    "test": "npx tsx --test test/*.test.ts",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "bun": ">=1.1.0",
+    "node": ">=22.0.0"
+  }
+}
