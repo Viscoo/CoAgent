@@ -99,3 +99,18 @@ for (const p of patches) {
 }
 
 console.log(`\n✔ CoAgent branding applied (${patched}/${patches.length} patches).`);
+
+// Install OpenCode dependencies (skip native build scripts for simplicity)
+console.log("\n📦 Installing OpenCode dependencies...");
+try {
+  execSync("bun install --ignore-scripts --no-summary", {
+    cwd: target,
+    stdio: "inherit",
+    shell: true,
+    timeout: 180_000,
+  });
+  console.log("✔ Dependencies installed (native modules skipped).");
+} catch (err) {
+  console.warn("⚠  Dependencies install incomplete:", err.message);
+  console.log("  You can run manually: cd .opencode-source && bun install --ignore-scripts");
+}
