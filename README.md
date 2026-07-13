@@ -191,6 +191,22 @@ Tasks that exhaust retries are marked `failed`; dependent tasks are blocked.
 - Merge is blocked when review or test gates fail.
 - File ownership conflicts between multiple implementers require integrator resolution.
 
+## Examples
+
+CoAgent provides 7 progressive examples to help you get started — no OpenCode server required for most of them.
+
+```bash
+npx tsx examples/01-task-graph.ts    # Understand task graphs & dependencies
+npx tsx examples/02-agent-roles.ts   # Explore 6 agent roles & permissions
+npx tsx examples/03-mock-orchestration.ts  # Mock full orchestration run
+npx tsx examples/04-retry-logic.ts   # Retry with exponential backoff
+npx tsx examples/05-hub-collaboration.ts   # Multi-agent Hub collaboration
+npx tsx examples/06-real-opencode.ts # Connect to real OpenCode (config guide)
+npx tsx examples/07-full-e2e.ts      # End-to-end: init → plan → execute → merge
+```
+
+See [docs/usage-examples.md](./docs/usage-examples.md) for detailed walkthrough of each example.
+
 ## Development
 
 ```bash
