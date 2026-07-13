@@ -1,35 +1,12 @@
 import blessed from "blessed";
-import { LOGO_LINES } from "./logo.js";
+import { buildLogoLines } from "./logo.js";
 import { matchSlashCommands, SLASH_COMMANDS } from "./commands.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
+import { displayWidth } from "./logo.js";
 
 const VERSION = "0.2.0";
 
-function displayWidth(str: string): number {
-  let w = 0;
-  for (const ch of str) {
-    const cp = ch.codePointAt(0)!;
-    if (cp >= 0x1100 && (
-      cp <= 0x115f || cp === 0x2329 || cp === 0x232a ||
-      (cp >= 0x2e80 && cp <= 0xa4cf && cp !== 0x303f) ||
-      (cp >= 0xac00 && cp <= 0xd7a3) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xfe10 && cp <= 0xfe19) ||
-      (cp >= 0xfe30 && cp <= 0xfe6f) ||
-      (cp >= 0xff01 && cp <= 0xff60) ||
-      (cp >= 0xffe0 && cp <= 0xffe6) ||
-      (cp >= 0x1f300 && cp <= 0x1f9ff) ||
-      (cp >= 0x20000 && cp <= 0x2fffd) ||
-      (cp >= 0x30000 && cp <= 0x3fffd)
-    )) {
-      w += 2;
-    } else {
-      w += 1;
-    }
-  }
-  return w;
-}
 
 export interface TuiOptions {
   cwd: string;
@@ -105,7 +82,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       mouse: true,
     });
 
-    for (const line of LOGO_LINES) {
+    for (const line of buildLogoLines(screen.width as number)) {
       chatArea.pushLine(line);
     }
     chatArea.pushLine("");
@@ -160,7 +137,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         const sel = i === selectedCmdIdx;
         const name = sel
           ? `{bold}{white-fg}${c.name}{/white-fg}{/bold}`
-          : `{cyan-fg}${c.name}{/cyan-fg}`;
+          : `{white-fg}${c.name}{/white-fg}`;
         const desc = sel
           ? `{white-fg}${c.description}{/white-fg}`
           : `{#6c7086-fg}${c.description}{/#6c7086-fg}`;
@@ -248,7 +225,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         chatArea.pushLine("─".repeat(50));
         for (const cmd of SLASH_COMMANDS) {
           chatArea.pushLine(
-            `  {cyan-fg}${cmd.name.padEnd(12)}{/cyan-fg} ${cmd.description}`,
+            `  {white-fg}${cmd.name.padEnd(12)}{/white-fg} ${cmd.description}`,
           );
         }
         chatArea.pushLine("");
@@ -263,7 +240,7 @@ export function startTui(options: TuiOptions): Promise<void> {
 
       if (lower === "/clear") {
         chatArea.setContent("");
-        for (const l of LOGO_LINES) chatArea.pushLine(l);
+        for (const l of buildLogoLines(screen.width as number)) chatArea.pushLine(l);
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
         screen.render();
