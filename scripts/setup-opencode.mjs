@@ -1,106 +1,222 @@
 #!/usr/bin/env node
-// setup-opencode.js — Download OpenCode source and apply CoAgent branding patches.
+// setup-opencode.js — Download/verify OpenCode source and apply CoAgent branding patches.
 // Runs on "npm install" via postinstall.
 
 import { execSync } from "node:child_process";
-import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const target = path.join(__dirname, ".opencode-source");
-const zipPath = path.join(__dirname, ".opencode-source.zip");
+const target = path.resolve(__dirname, "..", ".opencode-source");
+const zipPath = path.resolve(__dirname, "..", ".opencode-source.zip");
 
-// Already set up?
-if (existsSync(path.join(target, "packages", "opencode", "src", "index.ts"))) {
+// ── Step 1: Download / verify source ──────────────────────────────
+
+const hasSource = existsSync(path.join(target, "packages", "opencode", "src", "index.ts"));
+
+if (!hasSource) {
+  console.log("⬇ Downloading OpenCode source (https://github.com/anomalyco/opencode)...");
+  mkdirSync(target, { recursive: true });
+
+  const branch = process.env.OPENCODE_BRANCH || "dev";
+  const url = `https://github.com/anomalyco/opencode/archive/refs/heads/${branch}.zip`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    writeFileSync(zipPath, buffer);
+    console.log(`  Downloaded ${(buffer.length / 1024 / 1024).toFixed(1)} MB`);
+
+    const AdmZip = (await import("adm-zip")).default;
+    const zip = new AdmZip(zipPath);
+    zip.extractAllTo(target, true);
+
+    const extracted = execSync(`dir /b "${target}"`, { encoding: "utf8" }).trim().split("\n")[0].trim();
+    const srcDir = path.join(target, extracted);
+    execSync(`move "${srcDir}\\*" "${target}\\" 2>nul`, { shell: "cmd" });
+    execSync(`rd /s /q "${srcDir}"`, { shell: "cmd" });
+
+    try { execSync(`del "${zipPath}"`, { shell: "cmd" }); } catch {}
+
+    console.log("✔ Source extracted.");
+  } catch (err) {
+    console.error("✗ Failed to download OpenCode source:", err.message);
+    console.log("  You can manually clone: cd CoAgent && git submodule add https://github.com/anomalyco/opencode.git .opencode-source");
+    process.exit(1);
+  }
+} else {
   console.log("✔ CoAgent: OpenCode source already downloaded.");
-  process.exit(0);
 }
 
-console.log("⬇ Downloading OpenCode source (https://github.com/anomalyco/opencode)...");
-mkdirSync(target, { recursive: true });
-
-const branch = process.env.OPENCODE_BRANCH || "dev";
-const url = `https://github.com/anomalyco/opencode/archive/refs/heads/${branch}.zip`;
-
-try {
-  // Download
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-  const buffer = Buffer.from(await resp.arrayBuffer());
-  writeFileSync(zipPath, buffer);
-  console.log(`  Downloaded ${(buffer.length / 1024 / 1024).toFixed(1)} MB`);
-
-  // Extract
-  const AdmZip = (await import("adm-zip")).default;
-  const zip = new AdmZip(zipPath);
-  zip.extractAllTo(target, true);
-
-  // The zip contains a top-level dir like opencode-dev/
-  const extracted = execSync(`dir /b "${target}"`, { encoding: "utf8" }).trim().split("\n")[0].trim();
-  const srcDir = path.join(target, extracted);
-
-  // Move contents up
-  execSync(`move "${srcDir}\\*" "${target}\\" 2>nul`, { shell: "cmd" });
-  execSync(`rd /s /q "${srcDir}"`, { shell: "cmd" });
-
-  // Clean up zip
-  try { execSync(`del "${zipPath}"`, { shell: "cmd" }); } catch {}
-
-  console.log("✔ Source extracted.");
-} catch (err) {
-  console.error("✗ Failed to download OpenCode source:", err.message);
-  console.log("  You can manually clone: cd CoAgent && git submodule add https://github.com/anomalyco/opencode.git .opencode-source");
-  process.exit(1);
-}
-
-// Apply CoAgent patches
-const patches = [
-  // 1. Logo: replace OpenCode pixel art with CoAgent
-  {
-    file: "packages/tui/src/logo.ts",
-    find: 'left: [\n    "                   ",\n    "█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█",\n    "█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀",\n    "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀",\n  ],\n  right:',
-    replace: `left: [
-    "                   ",
-    "█▀▀▀ █▀▀█ █▀▀█ █▀▀▀ █▀▀▀ █▀  █ ▀▀█▀▀",
-    "█    █  █ █▀▀▀ █  ▀ █▀▀  █▀▀▀█   █  ",
-    "▀▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀  ▀   ▀  ",
-  ],
-  right:`,
-  },
-  // 2. Script name: change "opencode" to "coagent"
-  {
-    file: "packages/opencode/src/index.ts",
-    find: '.scriptName("opencode")',
-    replace: '.scriptName("coagent")',
-  },
-  {
-    file: "packages/opencode/src/temporary.ts",
-    find: '.scriptName("opencode")',
-    replace: '.scriptName("coagent")',
-  },
-];
+// ── Step 2: Apply CoAgent branding patches ─────────────────────────
 
 let patched = 0;
-for (const p of patches) {
-  const fullPath = path.join(target, p.file);
-  if (!existsSync(fullPath)) {
-    console.log(`  ⚠  Patch target not found: ${p.file}`);
-    continue;
-  }
-  const content = readFileSync(fullPath, "utf8");
-  if (content.includes(p.find)) {
-    writeFileSync(fullPath, content.replace(p.find, p.replace));
-    patched++;
-    console.log(`  ✓ Patched: ${p.file}`);
+
+// CoAgent logo art for logo.ts (split into left=COAG, right=ENT)
+// Generated by figlet ANSI Shadow font
+const COAG_LEFT = `left: [
+  " ██████╗ ██████╗  █████╗  ██████╗",
+  "██╔════╝██╔═══██╗██╔══██╗██╔════╝",
+  "██║     ██║   ██║███████║██║  ███╗",
+  "██║     ██║   ██║██╔══██║██║   ██║",
+  "╚██████╗╚██████╔╝██║  ██║╚██████╔╝",
+  " ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝",
+],`;
+
+const ENT_RIGHT = `right: [
+  " ███████╗███╗   ██╗████████╗",
+  " ██╔════╝████╗  ██║╚══██╔══╝",
+  " █████╗  ██╔██╗ ██║   ██║   ",
+  " ██╔══╝  ██║╚██╗██║   ██║   ",
+  " ███████╗██║ ╚████║   ██║   ",
+  " ╚══════╝╚═╝  ╚═══╝   ╚═╝   ",
+],`;
+
+// Patch 1: logo.ts - replace left (OPEN→COAG) and right (CODE→ENT)
+const logoPath = path.join(target, "packages", "tui", "src", "logo.ts");
+if (existsSync(logoPath)) {
+  let content = readFileSync(logoPath, "utf8");
+
+  const alreadyPatched = content.includes("██████╗ ██████╗  █████╗  ██████╗");
+
+  if (!alreadyPatched) {
+    const leftMatch = content.match(/left:\s*\[/);
+    const rightMatch = content.match(/right:\s*\[/);
+
+    if (leftMatch) {
+      const start = leftMatch.index;
+      const end = findArrayEnd(content, start + leftMatch[0].length);
+      if (end > 0) {
+        content = content.slice(0, start) + COAG_LEFT + content.slice(end);
+        patched++;
+        console.log("  ✓ Patched logo.ts left (COAG)");
+      }
+    }
+
+    if (rightMatch) {
+      const start = rightMatch.index;
+      const end = findArrayEnd(content, start + rightMatch[0].length);
+      if (end > 0) {
+        content = content.slice(0, start) + ENT_RIGHT + content.slice(end);
+        patched++;
+        console.log("  ✓ Patched logo.ts right (ENT)");
+      }
+    }
   } else {
-    console.log(`  ⚠  Pattern not found in ${p.file} - skipping`);
+    console.log("  ✓ logo.ts already patched");
+  }
+
+  writeFileSync(logoPath, content, "utf8");
+}
+
+function findArrayEnd(content, fromIndex) {
+  let depth = 1;
+  let i = fromIndex;
+  while (i < content.length && depth > 0) {
+    if (content[i] === "[") depth++;
+    else if (content[i] === "]") depth--;
+    i++;
+  }
+  while (i < content.length && /[\s,]/.test(content[i])) i++;
+  return i;
+}
+
+// Patch 2: ui.ts wordmark (opencode → coagent)
+const uiPath = path.join(target, "packages", "opencode", "src", "cli", "ui.ts");
+if (existsSync(uiPath)) {
+  let content = readFileSync(uiPath, "utf8");
+
+  const coagentWordmark = `const wordmark = [
+  " ██████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗",
+  "██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝",
+  "██║     ██║   ██║███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ",
+  "██║     ██║   ██║██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ",
+  "╚██████╗╚██████╔╝██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ",
+  " ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ",
+]`;
+
+  const alreadyPatched = content.includes("██████╗ ██████╗  █████╗  ██████╗ ███████╗███╗");
+
+  if (!alreadyPatched) {
+    const wordmarkMatch = content.match(/const\s+wordmark\s*=\s*\[/);
+    if (wordmarkMatch) {
+      const start = wordmarkMatch.index;
+      const end = findArrayEnd(content, start + wordmarkMatch[0].length);
+      if (end > 0) {
+        content = content.slice(0, start) + coagentWordmark + content.slice(end);
+        patched++;
+        console.log("  ✓ Patched ui.ts wordmark (coagent)");
+      }
+    } else {
+      console.log("  ⚠  Could not find wordmark in ui.ts");
+    }
+  } else {
+    console.log("  ✓ ui.ts wordmark already patched");
+  }
+
+  writeFileSync(uiPath, content, "utf8");
+}
+
+// Patch 3: scriptName "opencode" → "coagent"
+for (const file of ["packages/opencode/src/index.ts", "packages/opencode/src/temporary.ts"]) {
+  const p = path.join(target, file);
+  if (existsSync(p)) {
+    let c = readFileSync(p, "utf8");
+    if (c.includes('.scriptName("opencode")')) {
+      c = c.replace('.scriptName("opencode")', '.scriptName("coagent")');
+      writeFileSync(p, c, "utf8");
+      patched++;
+      console.log(`  ✓ Patched: ${file}`);
+    } else {
+      console.log(`  ✓ ${file} already patched`);
+    }
   }
 }
 
-console.log(`\n✔ CoAgent branding applied (${patched}/${patches.length} patches).`);
+// Patch 4: Replace "OpenCode" text references in TUI source
+const tuiSrcDir = path.join(target, "packages", "tui", "src");
+if (existsSync(tuiSrcDir)) {
+  const tuiFiles = findTsFiles(tuiSrcDir);
+  for (const f of tuiFiles) {
+    let c = readFileSync(f, "utf8");
+    let changed = false;
+    if (c.includes('"OpenCode"') || c.includes("'OpenCode'") || c.includes("`OpenCode`")) {
+      c = c.replace(/"OpenCode"/g, '"CoAgent"').replace(/'OpenCode'/g, "'CoAgent'").replace(/`OpenCode`/g, "`CoAgent`");
+      changed = true;
+    }
+    if (c.includes("OpenCode")) {
+      c = c.replace(/OpenCode/g, "CoAgent");
+      changed = true;
+    }
+    if (changed) {
+      writeFileSync(f, c, "utf8");
+      patched++;
+      console.log(`  ✓ Patched OpenCode→CoAgent in ${path.relative(target, f)}`);
+    }
+  }
+}
 
-// Install OpenCode dependencies (skip native build scripts for simplicity)
+function findTsFiles(dir) {
+  const results = [];
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) results.push(...findTsFiles(full));
+      else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) results.push(full);
+    }
+  } catch {}
+  return results;
+}
+
+if (patched > 0) {
+  console.log(`\n✔ CoAgent branding applied (${patched} patches).`);
+}
+
+// ── Step 3: Install OpenCode dependencies ──────────────────────────
+
 console.log("\n📦 Installing OpenCode dependencies...");
 try {
   execSync("bun install --ignore-scripts --no-summary", {

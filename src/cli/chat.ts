@@ -4,28 +4,23 @@ import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 import { type CoAgentRun } from "../core/types.js";
 
-const BANNER = `
-  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-  ██                                                    ██
-  ██            ▄▄█▀▀▀▀█▄▄   ▄▄█▀▀▀▀█▄▄               ██
-  ██            ██        ██ ██        ██              ██
-  ██            ▀▀█▄▄▄▄▄▄▄▀▀ ▀▀█▄▄▄▄▄▄▄▀▀              ██
-  ██                                                    ██
-  ██       🍤 CoAgent — Multi-Agent Orchestrator       ██
-  ██        6 roles · task graph · merge gate          ██
-  ██                                                    ██
-  ██  Commands:                                         ██
-  ██    <goal>       Run full orchestration flow        ██
-  ██    status       Latest run status                  ██
-  ██    logs         Decision log for last run          ██
-  ██    runs         List recent runs                   ██
-  ██    help         This screen                        ██
-  ██    exit         Leave CoAgent                      ██
-  ██                                                    ██
-  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
-  例：输入 "重构项目配置" ，CoAgent 会启动 6 个角色协作
-`;
+const BANNER = [
+  "",
+  "  \x1b[38;2;99;102;241m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m",
+  "",
+  "  \x1b[38;2;99;102;241m    ██████╗ ██████╗ ██╗  ██╗ ██████╗ ███████╗███████╗\x1b[0m",
+  "  \x1b[38;2;99;102;241m   ██╔════╝██╔═══██╗██║ ██╔╝██╔════╝ ██╔════╝██╔════╝\x1b[0m",
+  "  \x1b[38;2;139;92;246m   ██║     ██║   ██║█████╔╝ ██║  ███╗█████╗  ███████╗\x1b[0m",
+  "  \x1b[38;2;139;92;246m   ██║     ██║   ██║██╔═██╗ ██║   ██║██╔══╝  ╚════██║\x1b[0m",
+  "  \x1b[38;2;168;85;247m   ╚██████╗╚██████╔╝██║  ██╗╚██████╔╝███████╗███████║\x1b[0m",
+  "  \x1b[38;2;168;85;247m    ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝\x1b[0m",
+  "",
+  "  \x1b[38;2;139;92;246m  ◈\x1b[0m Collaborative Agent Framework  \x1b[2mv0.2.0\x1b[0m",
+  "  \x1b[2m  Multi-Agent · Task Graph · Orchestration\x1b[0m",
+  "",
+  "  \x1b[38;2;99;102;241m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m",
+  "",
+].join("\n");
 
 const CHEVRON = "🍤  ";
 const SEPARATOR = "  ─────────────────────────────────────────────";

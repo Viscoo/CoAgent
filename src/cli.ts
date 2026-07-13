@@ -7,8 +7,10 @@ import { cwd as processCwd, exit, stdout } from "node:process";
 import { SdkOpenCodeAdapter } from "./adapters/opencode-adapter.js";
 import { MockAdapter } from "./adapters/mock-adapter.js";
 import { startChat } from "./cli/chat.js";
+import { startTui } from "./tui/index.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { type CoAgentRun, type OrchestratorOptions } from "./core/types.js";
+import { startHub, AgentClient } from "./hub/index.js";
 
 const VERSION = "0.2.0";
 
@@ -103,53 +105,124 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (command === "chat") {
-    await startChat({
+    await startTui({
       cwd,
       failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
       concurrency: options.maxConcurrency,
       retries: options.maxRetries,
     });
+    return;
+  }
+
+  if (command === "hub") {
+    const port = Number(stringFlag(parsed, "port") ?? "4876");
+    const host = stringFlag(parsed, "host") ?? "127.0.0.1";
+    console.log(`🧠 Starting CoAgent Hub on ${host}:${port}...`);
+    const hub = await startHub({ port, host });
+    console.log(`  📡 WebSocket: ws://${host}:${port}`);
+    console.log(`  🌐 HTTP API:  http://${host}:${port}/`);
+    console.log(`  📋 Agent list: http://${host}:${port}/agents`);
+    console.log(`  Press Ctrl+C to stop.`);
+    // Keep alive
+    return new Promise(() => {});
+  }
+
+  if (command === "ps") {
+    const hubUrl = stringFlag(parsed, "hub") ?? "http://127.0.0.1:4876";
+    try {
+      const response = await fetch(`${hubUrl}/agents`);
+      const data = await response.json() as { agents: any[] };
+      const agents = data.agents;
+      if (agents.length === 0) {
+        console.log("📭 No agents connected.");
+        return;
+      }
+      console.log(`📡 ${agents.length} agent(s) connected:\n`);
+      for (const agent of agents) {
+        const statusIcon = agent.status === "busy" ? "▶" : agent.status === "idle" ? "○" : "●";
+        console.log(`  ${statusIcon} ${agent.name}`);
+        console.log(`     ID:     ${agent.id}`);
+        console.log(`     Role:   ${agent.role}`);
+        console.log(`     Status: ${agent.status}`);
+        console.log(`     Dir:    ${agent.projectDir}`);
+        if (agent.currentTask) console.log(`     Task:   ${agent.currentTask}`);
+        if (agent.goal) console.log(`     Goal:   ${agent.goal}`);
+        console.log(`     Uptime: ${formatUptime(agent.connectedAt)}`);
+        console.log("");
+      }
+    } catch {
+      console.error("✗ Could not connect to Hub. Is it running? (coagent hub)");
+    }
     return;
   }
 
   if (command === "open") {
-    const opencodeSource = sourceDir(".opencode-source", "packages", "opencode");
-    if (existsSync(opencodeSource)) {
-      const args = process.argv.slice(3);
-      const cp = spawn(
-        "bun",
-        ["run", "--conditions=browser", "./src/index.ts", ...args],
-        { cwd: opencodeSource, stdio: "inherit", shell: true },
-      );
-      return new Promise((resolve) => cp.on("exit", () => resolve()));
-    }
-    const opencodeBin = await findOpencodeBinary();
-    if (opencodeBin) {
-      try {
-        const { createOpencodeTui } = await import("@opencode-ai/sdk/server");
-        console.log("Launching OpenCode with CoAgent config...");
-        createOpencodeTui({
-          project: cwd,
-          config: {
-            model: stringFlag(parsed, "model") ?? "opencode/claude-sonnet-4-6",
-          },
-          signal: new AbortController().signal,
+    // Auto-connect to Hub if running (best-effort)
+    let hubClient: AgentClient | undefined;
+    try {
+      const check = await fetch("http://127.0.0.1:4876/health", { signal: AbortSignal.timeout(1000) });
+      if (check.ok) {
+        hubClient = new AgentClient({
+          name: `agent-${process.pid}`,
+          projectDir: cwd,
+          role: stringFlag(parsed, "role") ?? "general",
+          goal: "",
+          capabilities: ["opencode", "coagent"],
         });
-        return;
-      } catch {
-        // Fall through
+        await hubClient.connect();
+        hubClient.updateStatus("busy", "OpenCode session active");
+        console.log(`🧠 Connected to CoAgent Hub`);
+      }
+    } catch {
+      // Hub not running, proceed without
+    }
+
+    try {
+      const opencodeSource = sourceDir(".opencode-source", "packages", "opencode");
+      if (existsSync(opencodeSource)) {
+        const args = process.argv.slice(3);
+        const cp = spawn(
+          "bun",
+          ["run", "--conditions=browser", "./src/index.ts", ...args],
+          { cwd: opencodeSource, stdio: "inherit", shell: true },
+        );
+        await new Promise<void>((resolve) => cp.on("exit", () => resolve()));
+      } else {
+        const opencodeBin = await findOpencodeBinary();
+        if (opencodeBin) {
+          try {
+            const { createOpencodeTui } = await import("@opencode-ai/sdk/server");
+            console.log("Launching OpenCode with CoAgent config...");
+            createOpencodeTui({
+              project: cwd,
+              config: {
+                model: stringFlag(parsed, "model") ?? "opencode/claude-sonnet-4-6",
+              },
+              signal: new AbortController().signal,
+            });
+            return;
+          } catch {
+            // Fall through
+          }
+        }
+        console.log("Starting CoAgent interactive session...");
+        await startChat({
+          cwd,
+          failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
+          concurrency: options.maxConcurrency,
+          retries: options.maxRetries,
+        });
+      }
+    } finally {
+      if (hubClient) {
+        hubClient.updateStatus("idle", "");
+        await hubClient.disconnect();
       }
     }
-    console.log("Starting CoAgent interactive session...");
-    await startChat({
-      cwd,
-      failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
-      concurrency: options.maxConcurrency,
-      retries: options.maxRetries,
-    });
     return;
   }
 
+  // Unknown command — try connecting to hub for help
   throw new Error(`Unknown command: ${command || "<empty>"}. Run coagent help.`);
 }
 
@@ -306,7 +379,9 @@ Usage:
   coagent resume <run-id>
   coagent logs [run-id]
   coagent chat
-  coagent open
+  coagent open [--role <role>]
+  coagent hub              Start the CoAgent Hub server (agent communication)
+  coagent ps               List all agents connected to Hub
   coagent version
 
 Options:
@@ -318,6 +393,10 @@ Options:
   --opencode-url <url>     OpenCode server base URL.
   --mock                   Force mock adapter (default: auto when no URL given).
   --mock-failure-rate <n>  Mock adapter failure probability 0-1. Defaults to 0.
+  --port <port>            Hub server port (default: 4876)
+  --host <host>            Hub server host (default: 127.0.0.1)
+  --hub <url>              Hub URL for ps command (default: http://127.0.0.1:4876)
+  --role <role>            Agent role for this session
 
   Type "coagent" to open the interactive session.
   Type "exit" or ctrl-c to leave.
@@ -337,19 +416,7 @@ async function findOpencodeBinary(): Promise<string | undefined> {
 }
 
 async function startInteractiveSession(parsed: ParsedArgs, cwd: string): Promise<void> {
-  const opencodeSource = sourceDir(".opencode-source", "packages", "opencode");
-  if (existsSync(opencodeSource)) {
-    // Launch CoAgent TUI from modified OpenCode source
-    const args = process.argv.slice(2);
-    const cp = spawn(
-      "bun",
-      ["run", "--conditions=browser", "./src/index.ts", ...args],
-      { cwd: opencodeSource, stdio: "inherit", shell: true },
-    );
-    return new Promise((resolve) => cp.on("exit", () => resolve()));
-  }
-  // Fallback to chat REPL
-  await startChat({
+  await startTui({
     cwd,
     failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
     concurrency: Number(stringFlag(parsed, "concurrency") ?? "2"),
@@ -371,6 +438,16 @@ function buildAdapter(parsed: ParsedArgs, cwd: string): import("./adapters/openc
 function sourceDir(...segments: string[]): string {
   const dir = path.dirname(fileURLToPath(import.meta.url));
   return path.join(dir, "..", ...segments);
+}
+
+function formatUptime(isoTimestamp: string): string {
+  const diff = Date.now() - new Date(isoTimestamp).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ${sec % 60}s`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ${min % 60}m`;
 }
 
 const exitHandler = setupSignalHandler();
