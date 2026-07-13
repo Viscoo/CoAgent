@@ -328,7 +328,7 @@ export function startTui(options: TuiOptions): Promise<void> {
 
       if (line.startsWith("/")) {
         chatArea.pushLine(
-          `{red-fg}✗{/red-fg} Unknown command: ${line}. Type {cyan-fg}/help{/cyan-fg} for available commands.`,
+          `{red-fg}✗{/red-fg} Unknown command: ${line}. Type {white-fg}/help{/white-fg} for available commands.`,
         );
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
