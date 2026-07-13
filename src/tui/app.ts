@@ -97,16 +97,6 @@ export function startTui(options: TuiOptions): Promise<void> {
       tags: true,
     });
 
-    const versionTag = blessed.box({
-      parent: screen,
-      bottom: 0,
-      right: 1,
-      width: 20,
-      height: 1,
-      style: { bg: "#0f0f1a", fg: "#6c7086" },
-      content: `CoAgent v${VERSION}`,
-      align: "right",
-    });
 
     const autoCompleteBox = blessed.box({
       parent: screen,
@@ -123,7 +113,8 @@ export function startTui(options: TuiOptions): Promise<void> {
 
     function renderInput(): void {
       const prompt = "{cyan-fg}❯{/cyan-fg} ";
-      inputLine.setContent(`${prompt}${inputBuf}`);
+      const ver = `{#6c7086-fg}CoAgent v${VERSION}{/#6c7086-fg}`;
+      inputLine.setContent(`${prompt}${inputBuf}${ver}`);
       screen.render();
       const promptLen = 2;
       const cursorCol = promptLen + cursorPos;
@@ -143,11 +134,11 @@ export function startTui(options: TuiOptions): Promise<void> {
       const lines = matchedCmds.map((c, i) => {
         const sel = i === selectedCmdIdx;
         const name = sel
-          ? `{bg:#6366f1}{white-fg}${c.name}{/white-fg}{/bg}`
+          ? `{bold}{white-fg}${c.name}{/white-fg}{/bold}`
           : `{cyan-fg}${c.name}{/cyan-fg}`;
         const desc = sel
           ? `{white-fg}${c.description}{/white-fg}`
-          : `{grey-fg}${c.description}{/grey-fg}`;
+          : `{#6c7086-fg}${c.description}{/#6c7086-fg}`;
         return ` ${name.padEnd(14)} ${desc}`;
       });
       autoCompleteBox.setContent(lines.join("\n"));
