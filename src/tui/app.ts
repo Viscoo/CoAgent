@@ -4,6 +4,14 @@ import { matchSlashCommands, resolveCommand, SLASH_COMMANDS } from "./commands.j
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 import { displayWidth } from "./logo.js";
+import {
+  getCurrentModel,
+  setCurrentModel,
+  resolveModelInput,
+  formatModelString,
+  getKnownProviders,
+  type ModelConfig,
+} from "./model-config.js";
 
 const VERSION = "0.2.0";
 
@@ -283,9 +291,32 @@ export function startTui(options: TuiOptions): Promise<void> {
 
       if (cmd?.name === "/model") {
         if (rest) {
-          chatArea.pushLine(`{white-fg}◈{/white-fg} Model set to: ${rest}`);
+          const resolved = resolveModelInput(rest);
+          if (resolved) {
+            const configPath = setCurrentModel(options.cwd, resolved);
+            chatArea.pushLine(`{green-fg}✓{/green-fg} Model set to: {white-fg}${formatModelString(resolved)}{/white-fg}`);
+            chatArea.pushLine(`{#6c7086-fg}  Saved to ${configPath}{/#6c7086-fg}`);
+          } else {
+            chatArea.pushLine(`{red-fg}✗{/red-fg} Unknown model: ${rest}`);
+            chatArea.pushLine("{#6c7086-fg}  Usage: /model <provider/model>{/#6c7086-fg}");
+            chatArea.pushLine("{#6c7086-fg}  Example: /model anthropic/claude-sonnet-4-20250514{/#6c7086-fg}");
+            chatArea.pushLine("{#6c7086-fg}  Type /model with no args to see available providers.{/#6c7086-fg}");
+          }
         } else {
-          chatArea.pushLine("{white-fg}◈{/white-fg} Current model: opencode/claude-sonnet-4-6");
+          const current = getCurrentModel(options.cwd);
+          chatArea.pushLine(`{white-fg}◈{/white-fg} Current model: {cyan-fg}${formatModelString(current)}{/cyan-fg}`);
+          chatArea.pushLine("");
+          chatArea.pushLine("{white-fg}Available providers:{/white-fg}");
+          for (const [id, provider] of Object.entries(getKnownProviders())) {
+            chatArea.pushLine(`  {cyan-fg}${id}{/cyan-fg} (${provider.name})`);
+            for (const model of provider.models) {
+              const marker = id === current.provider && model === current.model ? " {green-fg}← current{/green-fg}" : "";
+              chatArea.pushLine(`    {#6c7086-fg}${id}/${model}{/#6c7086-fg}${marker}`);
+            }
+          }
+          chatArea.pushLine("");
+          chatArea.pushLine("{#6c7086-fg}Usage: /model <provider/model>{/#6c7086-fg}");
+          chatArea.pushLine("{#6c7086-fg}Example: /model anthropic/claude-sonnet-4-20250514{/#6c7086-fg}");
         }
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
@@ -444,6 +475,17 @@ export function startTui(options: TuiOptions): Promise<void> {
       }
 
       if (key.name === "return" || key.name === "enter") {
+        if (inputBuf.startsWith("/")) {
+          const matches = matchSlashCommands(inputBuf.trim());
+          const exact = resolveCommand(inputBuf.trim());
+          if (!exact && matches.length > 0) {
+            selectedCmdIdx = 0;
+            matchedCmds = matches;
+            showingAutoComplete = true;
+            applyAutoComplete();
+            return;
+          }
+        }
         submitInput();
         return;
       }

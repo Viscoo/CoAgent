@@ -191,11 +191,13 @@ async function main(argv: string[]): Promise<void> {
         if (opencodeBin) {
           try {
             const { createOpencodeTui } = await import("./opencode-sdk/server.js");
+            const { getCurrentModel, formatModelString } = await import("./tui/model-config.js");
+            const currentModel = formatModelString(getCurrentModel(cwd));
             console.log("Launching OpenCode with CoAgent config...");
             createOpencodeTui({
               project: cwd,
               config: {
-                model: stringFlag(parsed, "model") ?? "opencode/claude-sonnet-4-6",
+                model: stringFlag(parsed, "model") ?? currentModel,
               },
               signal: new AbortController().signal,
             });
