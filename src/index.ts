@@ -8,3 +8,5 @@ export * from "./core/types.js";
 export * from "./adapters/opencode-adapter.js";
 export * from "./adapters/mock-adapter.js";
 export * from "./cli/chat.js";
+export { startHub, AgentClient } from "./hub/index.js";
+export type { HubMessage, AgentInfo, AgentStatus } from "./hub/types.js";

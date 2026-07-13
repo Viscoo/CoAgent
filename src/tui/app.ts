@@ -61,22 +61,12 @@ export function startTui(options: TuiOptions): Promise<void> {
       },
     });
 
-    const headerBar = blessed.box({
-      parent: screen,
-      top: 0,
-      left: 1,
-      width: "100%-2",
-      height: 1,
-      style: { fg: "#6c7086" },
-      content: `CoAgent v${VERSION}`,
-    });
-
     const chatArea = blessed.log({
       parent: screen,
-      top: 1,
+      top: 0,
       left: 0,
       width: "100%",
-      height: "100%-2",
+      height: "100%-1",
       scrollable: true,
       alwaysScroll: true,
       scrollbar: {
@@ -103,8 +93,19 @@ export function startTui(options: TuiOptions): Promise<void> {
       left: 0,
       width: "100%",
       height: 1,
-      style: { bg: "#1e1e2e", fg: "#cdd6f4" },
+      style: { bg: "#0f0f1a", fg: "#cdd6f4" },
       tags: true,
+    });
+
+    const versionTag = blessed.box({
+      parent: screen,
+      bottom: 0,
+      right: 1,
+      width: 20,
+      height: 1,
+      style: { bg: "#0f0f1a", fg: "#6c7086" },
+      content: `CoAgent v${VERSION}`,
+      align: "right",
     });
 
     const autoCompleteBox = blessed.box({
@@ -122,14 +123,15 @@ export function startTui(options: TuiOptions): Promise<void> {
 
     function renderInput(): void {
       const prompt = "{cyan-fg}❯{/cyan-fg} ";
-      const before = inputBuf.slice(0, cursorPos);
-      const cursorChar = inputBuf[cursorPos] ?? " ";
-      const after = inputBuf.slice(cursorPos + 1);
-      inputLine.setContent(
-        `${prompt}${before}{inverse}${cursorChar}{/inverse}${after}`,
-      );
-      screen.program.hideCursor();
+      inputLine.setContent(`${prompt}${inputBuf}`);
       screen.render();
+      const promptLen = 2;
+      const cursorCol = promptLen + cursorPos;
+      const termHeight = screen.height as number;
+      try {
+        screen.program.cup(termHeight - 1, cursorCol);
+        screen.program.showCursor();
+      } catch {}
     }
 
     function renderAutoComplete(): void {
@@ -531,18 +533,17 @@ export function startTui(options: TuiOptions): Promise<void> {
     });
 
     screen.program.hideCursor();
+    screen.program.cup(screen.height as number - 1, 2);
+    screen.program.showCursor();
 
     chatArea.on("click", () => {
-      screen.program.hideCursor();
+      renderInput();
     });
 
     screen.on("resize", () => {
-      screen.program.hideCursor();
-      screen.render();
+      renderInput();
     });
 
     renderInput();
-    screen.program.hideCursor();
-    screen.render();
   });
 }
