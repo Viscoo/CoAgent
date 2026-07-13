@@ -7,15 +7,19 @@ export interface SlashCommand {
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
-  { name: "/help", description: "Show available commands", handler: async () => {} },
-  { name: "/new", description: "Start a new session", handler: async () => {} },
+  { name: "/help", aliases: ["/?"], description: "Show available commands", handler: async () => {} },
+  { name: "/new", aliases: ["/clear"], description: "Start a new session / clear chat", handler: async () => {} },
+  { name: "/sessions", aliases: ["/resume", "/continue"], description: "List or switch sessions", handler: async () => {} },
   { name: "/plan", description: "Plan a task with a goal", requiresArg: true, handler: async () => {} },
   { name: "/run", description: "Run a task with a goal", requiresArg: true, handler: async () => {} },
   { name: "/status", description: "Show current run status", handler: async () => {} },
-  { name: "/model", description: "Show or change model (provider/model)", handler: async () => {} },
-  { name: "/clear", description: "Clear the chat area", handler: async () => {} },
+  { name: "/model", aliases: ["/models", "/mo"], description: "Show or change model (provider/model)", handler: async () => {} },
+  { name: "/agents", description: "List or switch agent roles", handler: async () => {} },
+  { name: "/theme", description: "Switch color theme", handler: async () => {} },
   { name: "/compact", description: "Compact conversation history", handler: async () => {} },
-  { name: "/exit", aliases: ["/quit", ":q"], description: "Exit CoAgent", handler: async () => {} },
+  { name: "/diff", description: "View file changes from last run", handler: async () => {} },
+  { name: "/config", description: "Show or edit configuration", handler: async () => {} },
+  { name: "/exit", aliases: ["/quit", "/q", ":q"], description: "Exit CoAgent", handler: async () => {} },
 ];
 
 export function matchSlashCommands(input: string): SlashCommand[] {
