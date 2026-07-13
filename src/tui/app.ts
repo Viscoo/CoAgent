@@ -64,11 +64,11 @@ export function startTui(options: TuiOptions): Promise<void> {
     const headerBar = blessed.box({
       parent: screen,
       top: 0,
-      left: 0,
-      width: "100%",
+      left: 1,
+      width: "100%-2",
       height: 1,
-      style: { bg: "#6366f1", fg: "white", bold: true },
-      content: ` CoAgent v${VERSION}`,
+      style: { fg: "#6c7086" },
+      content: `CoAgent v${VERSION}`,
     });
 
     const chatArea = blessed.log({
@@ -76,7 +76,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       top: 1,
       left: 0,
       width: "100%",
-      height: "100%-3",
+      height: "100%-2",
       scrollable: true,
       alwaysScroll: true,
       scrollbar: {
@@ -123,11 +123,12 @@ export function startTui(options: TuiOptions): Promise<void> {
     function renderInput(): void {
       const prompt = "{cyan-fg}❯{/cyan-fg} ";
       const before = inputBuf.slice(0, cursorPos);
-      const after = inputBuf.slice(cursorPos);
-      const cursorChar = after.length > 0 ? after[0] : " ";
+      const cursorChar = inputBuf[cursorPos] ?? " ";
+      const after = inputBuf.slice(cursorPos + 1);
       inputLine.setContent(
-        `${prompt}${before}{underline}${cursorChar}{/underline}${after.slice(1)}`,
+        `${prompt}${before}{inverse}${cursorChar}{/inverse}${after}`,
       );
+      screen.program.hideCursor();
       screen.render();
     }
 
@@ -529,15 +530,19 @@ export function startTui(options: TuiOptions): Promise<void> {
       }
     });
 
+    screen.program.hideCursor();
+
     chatArea.on("click", () => {
       screen.program.hideCursor();
     });
 
     screen.on("resize", () => {
+      screen.program.hideCursor();
       screen.render();
     });
 
     renderInput();
+    screen.program.hideCursor();
     screen.render();
   });
 }
