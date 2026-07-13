@@ -1,6 +1,6 @@
 import blessed from "blessed";
-import { LOGO } from "./logo.js";
-import { matchSlashCommands, SLASH_COMMANDS, type SlashCommand } from "./commands.js";
+import { LOGO_LINES } from "./logo.js";
+import { matchSlashCommands, SLASH_COMMANDS } from "./commands.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 
@@ -19,13 +19,16 @@ export function startTui(options: TuiOptions): Promise<void> {
       smartCSR: true,
       title: "CoAgent",
       fullUnicode: true,
-      cursor: {
-        artificial: true,
-        shape: "line",
-        blink: true,
-        color: "white",
-      },
     });
+
+    let inputBuf = "";
+    let cursorPos = 0;
+    let showingAutoComplete = false;
+    let selectedCmdIdx = 0;
+    let matchedCmds: ReturnType<typeof matchSlashCommands> = [];
+    let chatHistory: string[] = [];
+    let historyIdx = -1;
+    let isProcessing = false;
 
     const adapter = new MockAdapter({ failureRate: options.failureRate ?? 0 });
     const orchestrator = new Orchestrator({
@@ -53,7 +56,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         if (event.error) {
           chatArea.pushLine(`  └─ {red-fg}${event.error}{/red-fg}`);
         }
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
       },
     });
@@ -64,11 +67,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       left: 0,
       width: "100%",
       height: 1,
-      style: {
-        bg: "#6366f1",
-        fg: "white",
-        bold: true,
-      },
+      style: { bg: "#6366f1", fg: "white", bold: true },
       content: ` CoAgent v${VERSION}`,
     });
 
@@ -77,7 +76,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       top: 1,
       left: 0,
       width: "100%",
-      height: "100%-4",
+      height: "100%-3",
       scrollable: true,
       alwaysScroll: true,
       scrollbar: {
@@ -86,185 +85,142 @@ export function startTui(options: TuiOptions): Promise<void> {
         track: { bg: "#1e1e2e" },
       },
       tags: true,
-      padding: { left: 1, right: 1 },
-      style: {
-        bg: "#0f0f1a",
-        fg: "#cdd6f4",
-      },
-    });
-
-    chatArea.pushLine(LOGO);
-    chatArea.pushLine(
-      " {grey-fg}Welcome! Type a goal to run, or /help for commands.{/grey-fg}",
-    );
-    chatArea.pushLine("");
-
-    const autoComplete = blessed.list({
-      parent: screen,
-      bottom: 3,
-      left: 2,
-      width: "50%",
-      height: Math.min(SLASH_COMMANDS.length + 2, 10),
-      hidden: true,
-      style: {
-        bg: "#1e1e2e",
-        fg: "#cdd6f4",
-        selected: { bg: "#6366f1", fg: "white", bold: true },
-        item: { bg: "#1e1e2e", fg: "#cdd6f4" },
-      },
-      border: { type: "line" },
-      label: " Commands ",
-      keys: true,
-      vi: true,
+      padding: { left: 2, right: 2 },
+      style: { bg: "#0f0f1a", fg: "#cdd6f4" },
       mouse: true,
     });
 
-    let showingAutoComplete = false;
-    let selectedCommandIdx = -1;
-
-    function updateAutoComplete(value: string) {
-      const matches = matchSlashCommands(value);
-      if (matches.length > 0 && value.startsWith("/")) {
-        autoComplete.setItems(
-          matches.map((c) => `${c.name}  {grey-fg}${c.description}{/grey-fg}`),
-        );
-        autoComplete.height = Math.min(matches.length + 2, 10);
-        autoComplete.show();
-        autoComplete.select(0);
-        selectedCommandIdx = 0;
-        showingAutoComplete = true;
-      } else {
-        autoComplete.hide();
-        showingAutoComplete = false;
-        selectedCommandIdx = -1;
-      }
-      screen.render();
+    for (const line of LOGO_LINES) {
+      chatArea.pushLine(line);
     }
+    chatArea.pushLine("");
+    chatArea.pushLine("{grey-fg}Welcome! Type a goal to run, or /help for commands.{/grey-fg}");
+    chatArea.pushLine("");
 
-    const inputBox = blessed.textbox({
+    const inputLine = blessed.box({
       parent: screen,
       bottom: 0,
       left: 0,
       width: "100%",
-      height: 3,
-      border: { type: "line" },
-      style: {
-        bg: "#1e1e2e",
-        fg: "#cdd6f4",
-        border: { fg: "#6366f1" },
-        focus: {
-          border: { fg: "#a855f7" },
-        },
-      },
-      inputOnFocus: true,
-      padding: { left: 1 },
-    });
-
-    const statusBar = blessed.box({
-      parent: screen,
-      bottom: 3,
-      left: 0,
-      width: "100%",
       height: 1,
-      style: {
-        bg: "#1e1e2e",
-        fg: "#6c7086",
-      },
-      content: " {cyan-fg}◈{/cyan-fg} CoAgent │ Multi-Agent · Task Graph · Orchestration │ Ctrl+C: exit",
+      style: { bg: "#1e1e2e", fg: "#cdd6f4" },
+      tags: true,
     });
 
-    screen.append(headerBar);
-    screen.append(chatArea);
-    screen.append(statusBar);
-    screen.append(autoComplete);
-    screen.append(inputBox);
-
-    inputBox.focus();
-
-    screen.key(["escape", "C-c"], () => {
-      screen.destroy();
-      resolve();
+    const autoCompleteBox = blessed.box({
+      parent: screen,
+      bottom: 1,
+      left: 2,
+      width: "50%",
+      height: 0,
+      hidden: true,
+      style: { bg: "#1e1e2e", fg: "#cdd6f4" },
+      border: { type: "line" as const, fg: "#6366f1" as any },
+      tags: true,
+      label: " Commands ",
     });
 
-    screen.key(["up"], () => {
-      if (showingAutoComplete && selectedCommandIdx > 0) {
-        selectedCommandIdx--;
-        autoComplete.up(1);
-        screen.render();
-        return false;
-      }
-    });
+    function renderInput(): void {
+      const prompt = "{cyan-fg}❯{/cyan-fg} ";
+      const before = inputBuf.slice(0, cursorPos);
+      const after = inputBuf.slice(cursorPos);
+      const cursorChar = after.length > 0 ? after[0] : " ";
+      inputLine.setContent(
+        `${prompt}${before}{underline}${cursorChar}{/underline}${after.slice(1)}`,
+      );
+      screen.render();
+    }
 
-    screen.key(["down"], () => {
-      if (showingAutoComplete) {
-        const itemCount = (autoComplete as any).items?.length ?? 0;
-        if (selectedCommandIdx < itemCount - 1) {
-          selectedCommandIdx++;
-          autoComplete.down(1);
-          screen.render();
-        }
-        return false;
-      }
-    });
-
-    screen.key(["tab"], () => {
-      if (showingAutoComplete && selectedCommandIdx >= 0) {
-        const matches = matchSlashCommands(inputBox.getValue());
-        if (matches[selectedCommandIdx]) {
-          inputBox.setValue(matches[selectedCommandIdx].name + " ");
-          autoComplete.hide();
-          showingAutoComplete = false;
-          screen.render();
-        }
-        return false;
-      }
-    });
-
-    inputBox.on("keypress", (ch, key) => {
-      if (key.name === "return" || key.name === "enter") {
+    function renderAutoComplete(): void {
+      if (matchedCmds.length === 0 || !inputBuf.startsWith("/")) {
+        hideAutoComplete();
         return;
       }
-      setTimeout(() => {
-        updateAutoComplete(inputBox.getValue());
-      }, 0);
-    });
+      showingAutoComplete = true;
+      const lines = matchedCmds.map((c, i) => {
+        const sel = i === selectedCmdIdx;
+        const name = sel
+          ? `{bg:#6366f1}{white-fg}${c.name}{/white-fg}{/bg}`
+          : `{cyan-fg}${c.name}{/cyan-fg}`;
+        const desc = sel
+          ? `{white-fg}${c.description}{/white-fg}`
+          : `{grey-fg}${c.description}{/grey-fg}`;
+        return ` ${name.padEnd(14)} ${desc}`;
+      });
+      autoCompleteBox.setContent(lines.join("\n"));
+      autoCompleteBox.height = matchedCmds.length + 2;
+      autoCompleteBox.show();
+      screen.render();
+    }
 
-    inputBox.on("submit", async (value: string) => {
-      const line = value.trim();
-      inputBox.clearValue();
+    function hideAutoComplete(): void {
+      showingAutoComplete = false;
+      matchedCmds = [];
+      selectedCmdIdx = 0;
+      autoCompleteBox.hide();
+    }
 
-      if (showingAutoComplete) {
-        autoComplete.hide();
-        showingAutoComplete = false;
-      }
-
-      if (!line) {
-        inputBox.focus();
-        screen.render();
+    function updateAutoComplete(): void {
+      if (!inputBuf.startsWith("/")) {
+        hideAutoComplete();
         return;
       }
+      matchedCmds = matchSlashCommands(inputBuf);
+      if (matchedCmds.length === 0) {
+        hideAutoComplete();
+        return;
+      }
+      selectedCmdIdx = 0;
+      renderAutoComplete();
+    }
 
-      chatArea.pushLine(`{cyan-fg}❯{/cyan-fg} ${line}`);
-      chatArea.pushLine("");
-      chatArea.scroll(10);
-      screen.render();
+    function applyAutoComplete(): void {
+      if (!showingAutoComplete || matchedCmds.length === 0) return;
+      const cmd = matchedCmds[selectedCmdIdx];
+      if (cmd) {
+        inputBuf = cmd.name + " ";
+        cursorPos = inputBuf.length;
+        hideAutoComplete();
+        renderInput();
+      }
+    }
 
-      await handleCommand(line);
+    function submitInput(): void {
+      const line = inputBuf.trim();
+      inputBuf = "";
+      cursorPos = 0;
+      hideAutoComplete();
 
-      inputBox.focus();
-      screen.render();
-    });
+      if (line) {
+        chatHistory.push(line);
+        historyIdx = chatHistory.length;
+        chatArea.pushLine(`{cyan-fg}❯{/cyan-fg} ${line}`);
+        chatArea.pushLine("");
+        chatArea.setScrollPerc(100);
+        screen.render();
+
+        if (!isProcessing) {
+          isProcessing = true;
+          handleCommand(line).finally(() => {
+            isProcessing = false;
+            renderInput();
+          });
+        }
+      }
+
+      renderInput();
+    }
 
     async function handleCommand(line: string): Promise<void> {
       const lower = line.toLowerCase();
 
       if (lower === "/exit" || lower === "/quit") {
         chatArea.pushLine("{grey-fg}Goodbye! 👋{/grey-fg}");
+        chatArea.setScrollPerc(100);
         screen.render();
-        setTimeout(() => {
-          screen.destroy();
-          resolve();
-        }, 500);
+        await new Promise((r) => setTimeout(r, 300));
+        screen.destroy();
+        resolve();
         return;
       }
 
@@ -281,16 +237,16 @@ export function startTui(options: TuiOptions): Promise<void> {
           "{grey-fg}Type a goal directly to run it through the agent pipeline.{/grey-fg}",
         );
         chatArea.pushLine("");
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
 
       if (lower === "/clear") {
         chatArea.setContent("");
-        chatArea.pushLine(LOGO);
+        for (const l of LOGO_LINES) chatArea.pushLine(l);
         chatArea.pushLine("");
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
@@ -303,7 +259,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         } else {
           printRun(run);
         }
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
@@ -313,10 +269,12 @@ export function startTui(options: TuiOptions): Promise<void> {
         if (model) {
           chatArea.pushLine(`{cyan-fg}◈{/cyan-fg} Model set to: ${model}`);
         } else {
-          chatArea.pushLine("{cyan-fg}◈{/cyan-fg} Current model: opencode/claude-sonnet-4-6");
+          chatArea.pushLine(
+            "{cyan-fg}◈{/cyan-fg} Current model: opencode/claude-sonnet-4-6",
+          );
         }
         chatArea.pushLine("");
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
@@ -324,15 +282,17 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (lower.startsWith("/plan")) {
         const goal = line.slice(5).trim();
         if (!goal) {
-          chatArea.pushLine("{red-fg}✗{/red-fg} /plan requires a goal. Usage: /plan <goal>");
+          chatArea.pushLine(
+            "{red-fg}✗{/red-fg} /plan requires a goal. Usage: /plan <goal>",
+          );
           chatArea.pushLine("");
-          chatArea.scroll(10);
+          chatArea.setScrollPerc(100);
           screen.render();
           return;
         }
         chatArea.pushLine(`{cyan-fg}◈{/cyan-fg} Planning: ${goal}`);
         chatArea.pushLine("─".repeat(50));
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         try {
           const run = await orchestrator.plan(goal);
@@ -342,7 +302,7 @@ export function startTui(options: TuiOptions): Promise<void> {
             `{red-fg}✗ Error: ${error instanceof Error ? error.message : String(error)}{/red-fg}`,
           );
         }
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
@@ -350,9 +310,11 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (lower.startsWith("/run")) {
         const goal = line.slice(4).trim();
         if (!goal) {
-          chatArea.pushLine("{red-fg}✗{/red-fg} /run requires a goal. Usage: /run <goal>");
+          chatArea.pushLine(
+            "{red-fg}✗{/red-fg} /run requires a goal. Usage: /run <goal>",
+          );
           chatArea.pushLine("");
-          chatArea.scroll(10);
+          chatArea.setScrollPerc(100);
           screen.render();
           return;
         }
@@ -363,7 +325,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (lower.startsWith("/compact")) {
         chatArea.pushLine("{cyan-fg}◈{/cyan-fg} Conversation compacted.");
         chatArea.pushLine("");
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
@@ -373,7 +335,7 @@ export function startTui(options: TuiOptions): Promise<void> {
           `{red-fg}✗{/red-fg} Unknown command: ${line}. Type {cyan-fg}/help{/cyan-fg} for available commands.`,
         );
         chatArea.pushLine("");
-        chatArea.scroll(10);
+        chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
@@ -384,10 +346,10 @@ export function startTui(options: TuiOptions): Promise<void> {
     async function runGoal(goal: string): Promise<void> {
       chatArea.pushLine(`{cyan-fg}◈{/cyan-fg} Goal: ${goal}`);
       chatArea.pushLine(
-        `{grey-fg}🎭 Roles: planner → explorer → implementer → reviewer + tester → integrator{/grey-fg}`,
+        "{grey-fg}🎭 Roles: planner → explorer → implementer → reviewer + tester → integrator{/grey-fg}",
       );
       chatArea.pushLine("─".repeat(50));
-      chatArea.scroll(10);
+      chatArea.setScrollPerc(100);
       screen.render();
 
       try {
@@ -400,7 +362,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         );
       }
       chatArea.pushLine("");
-      chatArea.scroll(10);
+      chatArea.setScrollPerc(100);
       screen.render();
     }
 
@@ -436,10 +398,146 @@ export function startTui(options: TuiOptions): Promise<void> {
               : task.status === "running"
                 ? "{cyan-fg}▶{/cyan-fg}"
                 : "·";
-        chatArea.pushLine(`    ${tBadge} ${task.role.padEnd(11)} ${task.title}`);
+        chatArea.pushLine(
+          `    ${tBadge} ${task.role.padEnd(11)} ${task.title}`,
+        );
       }
     }
 
+    screen.program.on("keypress", (ch: string, key: any) => {
+      if (!key) return;
+
+      if (key.full === "C-c" || key.full === "escape") {
+        screen.destroy();
+        resolve();
+        return;
+      }
+
+      if (showingAutoComplete) {
+        if (key.name === "up") {
+          selectedCmdIdx = Math.max(0, selectedCmdIdx - 1);
+          renderAutoComplete();
+          return;
+        }
+        if (key.name === "down") {
+          selectedCmdIdx = Math.min(matchedCmds.length - 1, selectedCmdIdx + 1);
+          renderAutoComplete();
+          return;
+        }
+        if (key.name === "tab" || key.name === "return") {
+          applyAutoComplete();
+          if (key.name === "return") {
+            submitInput();
+          }
+          return;
+        }
+      }
+
+      if (key.name === "return" || key.name === "enter") {
+        submitInput();
+        return;
+      }
+
+      if (key.name === "backspace") {
+        if (cursorPos > 0) {
+          inputBuf =
+            inputBuf.slice(0, cursorPos - 1) + inputBuf.slice(cursorPos);
+          cursorPos--;
+          updateAutoComplete();
+          renderInput();
+        }
+        return;
+      }
+
+      if (key.name === "delete") {
+        if (cursorPos < inputBuf.length) {
+          inputBuf =
+            inputBuf.slice(0, cursorPos) + inputBuf.slice(cursorPos + 1);
+          updateAutoComplete();
+          renderInput();
+        }
+        return;
+      }
+
+      if (key.name === "left") {
+        if (cursorPos > 0) cursorPos--;
+        renderInput();
+        return;
+      }
+
+      if (key.name === "right") {
+        if (cursorPos < inputBuf.length) cursorPos++;
+        renderInput();
+        return;
+      }
+
+      if (key.name === "home") {
+        cursorPos = 0;
+        renderInput();
+        return;
+      }
+
+      if (key.name === "end") {
+        cursorPos = inputBuf.length;
+        renderInput();
+        return;
+      }
+
+      if (key.name === "up" && !showingAutoComplete) {
+        if (chatHistory.length > 0 && historyIdx > 0) {
+          historyIdx--;
+          inputBuf = chatHistory[historyIdx];
+          cursorPos = inputBuf.length;
+          updateAutoComplete();
+          renderInput();
+        }
+        return;
+      }
+
+      if (key.name === "down" && !showingAutoComplete) {
+        if (historyIdx < chatHistory.length - 1) {
+          historyIdx++;
+          inputBuf = chatHistory[historyIdx];
+        } else {
+          historyIdx = chatHistory.length;
+          inputBuf = "";
+        }
+        cursorPos = inputBuf.length;
+        updateAutoComplete();
+        renderInput();
+        return;
+      }
+
+      if (key.name === "pageup") {
+        chatArea.scroll(-20);
+        screen.render();
+        return;
+      }
+
+      if (key.name === "pagedown") {
+        chatArea.scroll(20);
+        screen.render();
+        return;
+      }
+
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+        inputBuf =
+          inputBuf.slice(0, cursorPos) + ch + inputBuf.slice(cursorPos);
+        cursorPos++;
+        updateAutoComplete();
+        renderInput();
+      }
+    });
+
+    chatArea.on("click", () => {
+      screen.program.hideCursor();
+    });
+
+    screen.on("resize", () => {
+      screen.render();
+    });
+
+    renderInput();
     screen.render();
   });
 }

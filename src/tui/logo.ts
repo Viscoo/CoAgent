@@ -1,12 +1,12 @@
-export const LOGO = [
+export const LOGO_LINES = [
   "",
-  " {cyan-fg} ██████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗{/cyan-fg}",
-  " {cyan-fg}██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝{/cyan-fg}",
-  " {magenta-fg}██║     ██║   ██║███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║{/magenta-fg}",
-  " {magenta-fg}██║     ██║   ██║██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║{/magenta-fg}",
-  " {blue-fg}╚██████╗╚██████╔╝██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║{/blue-fg}",
-  " {blue-fg} ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝{/blue-fg}",
+  "{center}{cyan-fg} ██████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗{/cyan-fg}{/center}",
+  "{center}{cyan-fg}██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝{/cyan-fg}{/center}",
+  "{center}{magenta-fg}██║     ██║   ██║███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║{/magenta-fg}{/center}",
+  "{center}{magenta-fg}██║     ██║   ██║██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║{/magenta-fg}{/center}",
+  "{center}{blue-fg}╚██████╗╚██████╔╝██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║{/blue-fg}{/center}",
+  "{center}{blue-fg} ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝{/blue-fg}{/center}",
   "",
-  " {white-fg}◈ Collaborative Agent Framework{/white-fg} {grey-fg}v0.2.0{/grey-fg}",
+  "{center}{white-fg}◈ Collaborative Agent Framework{/white-fg} {grey-fg}v0.2.0{/grey-fg}{/center}",
   "",
-].join("\n");
+];
