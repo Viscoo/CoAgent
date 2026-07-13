@@ -1,0 +1,195 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CoAgent 协作架构</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f8fafc;
+    --fg: #172033;
+    --muted: #5b6475;
+    --line: #64748b;
+    --neutral: #e2e8f0;
+    --input: #bfdbfe;
+    --process: #c7d2fe;
+    --storage: #99f6e4;
+    --external: #fde68a;
+    --risk: #fecaca;
+    --highlight: #f0abfc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --fg: #e5e7eb;
+      --muted: #a3adbd;
+      --line: #94a3b8;
+      --neutral: #334155;
+      --input: #1d4ed8;
+      --process: #4338ca;
+      --storage: #0f766e;
+      --external: #92400e;
+      --risk: #991b1b;
+      --highlight: #86198f;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 980px;
+    margin: 32px auto;
+    padding: 0 20px;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .title { font-size: 20px; font-weight: 650; fill: var(--fg); }
+  .label { font-size: 14px; font-weight: 600; fill: var(--fg); }
+  .small { font-size: 12px; fill: var(--muted); }
+  .node { stroke: var(--line); stroke-width: 1; rx: 8; ry: 8; }
+  .neutral { fill: var(--neutral); }
+  .input { fill: var(--input); }
+  .process { fill: var(--process); }
+  .storage { fill: var(--storage); }
+  .external { fill: var(--external); }
+  .risk { fill: var(--risk); }
+  .highlight { fill: var(--highlight); opacity: 0.4; }
+  .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .edge-dash { stroke: var(--line); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  .zone { fill: none; stroke: var(--line); stroke-width: 1; stroke-dasharray: 6 5; opacity: 0.8; }
+</style>
+<main>
+  <svg viewBox="0 0 940 640" xmlns="http://www.w3.org/2000/svg">
+    <!-- Zones -->
+    <rect class="zone" x="20" y="20" width="290" height="600" />
+    <text class="small" x="30" y="38">Agent A (终端窗口)</text>
+
+    <rect class="zone" x="330" y="20" width="290" height="600" />
+    <text class="small" x="340" y="38">Agent B (终端窗口)</text>
+
+    <rect class="zone" x="640" y="20" width="280" height="600" />
+    <text class="small" x="650" y="38">CoAgent Hub (协作层)</text>
+
+    <!-- Agent A Boxes -->
+    <rect class="node input" x="45" y="60" width="120" height="44" />
+    <text class="label" x="105" y="87" text-anchor="middle">🛡️ 策略守卫</text>
+
+    <rect class="node process" x="175" y="60" width="120" height="44" />
+    <text class="label" x="235" y="87" text-anchor="middle">📋 任务引擎</text>
+
+    <rect class="node neutral" x="45" y="120" width="120" height="44" />
+    <text class="label" x="105" y="147" text-anchor="middle">🧠 OpenCode</text>
+
+    <rect class="node neutral" x="175" y="120" width="120" height="44" />
+    <text class="label" x="235" y="147" text-anchor="middle">🔗 MCP 工具</text>
+
+    <!-- Agent A Status Box -->
+    <rect class="node storage" x="45" y="200" width="250" height="100" />
+    <text class="label" x="170" y="225" text-anchor="middle">📊 协作状态</text>
+    <text class="small" x="60" y="245">agent: planner</text>
+    <text class="small" x="60" y="262">goal: 重构API接口</text>
+    <text class="small" x="60" y="279">status: 运行中 (3/5)</text>
+
+    <!-- Agent A Communication -->
+    <rect class="node highlight" x="45" y="320" width="250" height="80" />
+    <text class="label" x="170" y="348" text-anchor="middle">💬 通信模块 (NEW)</text>
+    <text class="small" x="60" y="368">WebSocket ←→ Hub</text>
+    <text class="small" x="60" y="385">agent inbox / outbox</text>
+
+    <!-- Agent B Boxes -->
+    <rect class="node input" x="355" y="60" width="120" height="44" />
+    <text class="label" x="415" y="87" text-anchor="middle">🛡️ 策略守卫</text>
+
+    <rect class="node process" x="485" y="60" width="120" height="44" />
+    <text class="label" x="545" y="87" text-anchor="middle">📋 任务引擎</text>
+
+    <rect class="node neutral" x="355" y="120" width="120" height="44" />
+    <text class="label" x="415" y="147" text-anchor="middle">🧠 OpenCode</text>
+
+    <rect class="node neutral" x="485" y="120" width="120" height="44" />
+    <text class="label" x="545" y="147" text-anchor="middle">🔗 MCP 工具</text>
+
+    <!-- Agent B Status -->
+    <rect class="node storage" x="355" y="200" width="250" height="100" />
+    <text class="label" x="480" y="225" text-anchor="middle">📊 协作状态</text>
+    <text class="small" x="370" y="245">agent: implementer</text>
+    <text class="small" x="370" y="262">goal: 实现用户登录模块</text>
+    <text class="small" x="370" y="279">status: 等待依赖</text>
+
+    <!-- Agent B Communication -->
+    <rect class="node highlight" x="355" y="320" width="250" height="80" />
+    <text class="label" x="480" y="348" text-anchor="middle">💬 通信模块 (NEW)</text>
+    <text class="small" x="370" y="368">WebSocket ←→ Hub</text>
+    <text class="small" x="370" y="385">agent inbox / outbox</text>
+
+    <!-- Agent A Message Area -->
+    <rect class="node external" x="45" y="430" width="250" height="90" />
+    <text class="label" x="170" y="455" text-anchor="middle">📨 收到的消息</text>
+    <text class="small" x="60" y="475">[impl] 我做好 CRUD 了，接口</text>
+    <text class="small" x="60" y="492">      是 POST /api/v2/users</text>
+
+    <!-- Agent B Message Area -->
+    <rect class="node external" x="355" y="430" width="250" height="90" />
+    <text class="label" x="480" y="455" text-anchor="middle">📨 收到的消息</text>
+    <text class="small" x="370" y="475">[planner] DB 表设计完成了吗？</text>
+    <text class="small" x="370" y="492">[planner] 我需要先合并PR</text>
+
+    <!-- Hub Box -->
+    <rect class="node process" x="665" y="60" width="230" height="44" />
+    <text class="label" x="780" y="87" text-anchor="middle">🌐 HTTP / WebSocket 服务</text>
+
+    <rect class="node storage" x="665" y="120" width="230" height="100" />
+    <text class="label" x="780" y="145" text-anchor="middle">🗺️ 协作状态存储</text>
+    <text class="small" x="680" y="165">active agents: A (planner), B (impl)</text>
+    <text class="small" x="680" y="182">waiting agents: C (reviewer)</text>
+
+    <rect class="node storage" x="665" y="240" width="230" height="100" />
+    <text class="label" x="780" y="265" text-anchor="middle">📬 消息队列</text>
+    <text class="small" x="680" y="285">A → B: "DB设计了吗"</text>
+    <text class="small" x="680" y="302">B → A: "做好了, /api/v2/users"</text>
+
+    <rect class="node external" x="665" y="360" width="230" height="44" />
+    <text class="label" x="780" y="387" text-anchor="middle">🔍 agent 发现 & 心跳</text>
+
+    <rect class="node risk" x="665" y="420" width="230" height="80" />
+    <text class="label" x="780" y="448" text-anchor="middle">🚀 API 端点</text>
+    <text class="small" x="680" y="468">POST /hub/register</text>
+    <text class="small" x="680" y="485">POST /hub/message</text>
+    <text class="small" x="680" y="502">GET  /hub/agents</text>
+
+    <!-- Future -->
+    <rect class="node highlight" x="665" y="530" width="230" height="60" />
+    <text class="label" x="780" y="555" text-anchor="middle">🌱 未来扩展</text>
+    <text class="small" x="680" y="575">Agent Marketplace · 持久化</text>
+
+    <!-- Arrows: Agent connections to Hub -->
+    <line class="edge" x1="295" y1="360" x2="330" y2="360" />
+    <polygon fill="var(--line)" points="330,355 342,360 330,365" />
+
+    <line class="edge" x1="605" y1="360" x2="640" y2="360" />
+    <polygon fill="var(--line)" points="640,355 652,360 640,365" />
+
+    <!-- Arrows: Hub to storage -->
+    <line class="edge" x1="780" y1="104" x2="780" y2="120" />
+    <polygon fill="var(--line)" points="775,120 780,132 785,120" />
+
+    <line class="edge" x1="780" y1="220" x2="780" y2="240" />
+    <polygon fill="var(--line)" points="775,240 780,252 785,240" />
+
+    <!-- Arrows: Internal agent -->
+    <line class="edge" x1="165" y1="82" x2="175" y2="82" />
+    <line class="edge" x1="105" y1="104" x2="105" y2="120" />
+    <polygon fill="var(--line)" points="100,120 105,132 110,120" />
+
+    <line class="edge" x1="235" y1="104" x2="235" y2="120" />
+    <polygon fill="var(--line)" points="230,120 235,132 240,120" />
+
+    <!-- "目前" label -->
+    <text class="title" x="20" y="630">目前: 隔离 &lt;--- 目标: 协作</text>
+  </svg>
+</main>

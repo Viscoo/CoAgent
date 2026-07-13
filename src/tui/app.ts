@@ -48,7 +48,7 @@ export function startTui(options: TuiOptions): Promise<void> {
               : event.kind === "task-retry"
                 ? "{yellow-fg}↻{/yellow-fg}"
                 : event.kind === "task-start"
-                  ? "{cyan-fg}▶{/cyan-fg}"
+                  ? "{white-fg}▶{/white-fg}"
                   : "·";
         const retry =
           event.attempt && event.maxAttempts
@@ -114,7 +114,7 @@ export function startTui(options: TuiOptions): Promise<void> {
     });
 
     function renderInput(): void {
-      const prompt = "{cyan-fg}❯{/cyan-fg} ";
+      const prompt = "{white-fg}❯{/white-fg} ";
       const ver = `{#6c7086-fg}CoAgent v${VERSION}{/#6c7086-fg}`;
       inputLine.setContent(`${prompt}${inputBuf}${ver}`);
       screen.render();
@@ -190,7 +190,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (line) {
         chatHistory.push(line);
         historyIdx = chatHistory.length;
-        chatArea.pushLine(`{cyan-fg}❯{/cyan-fg} ${line}`);
+        chatArea.pushLine(`{white-fg}❯{/white-fg} ${line}`);
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
         screen.render();
@@ -263,10 +263,10 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (lower.startsWith("/model")) {
         const model = line.slice(6).trim();
         if (model) {
-          chatArea.pushLine(`{cyan-fg}◈{/cyan-fg} Model set to: ${model}`);
+          chatArea.pushLine(`{white-fg}◈{/white-fg} Model set to: ${model}`);
         } else {
           chatArea.pushLine(
-            "{cyan-fg}◈{/cyan-fg} Current model: opencode/claude-sonnet-4-6",
+            "{white-fg}◈{/white-fg} Current model: opencode/claude-sonnet-4-6",
           );
         }
         chatArea.pushLine("");
@@ -286,7 +286,7 @@ export function startTui(options: TuiOptions): Promise<void> {
           screen.render();
           return;
         }
-        chatArea.pushLine(`{cyan-fg}◈{/cyan-fg} Planning: ${goal}`);
+        chatArea.pushLine(`{white-fg}◈{/white-fg} Planning: ${goal}`);
         chatArea.pushLine("─".repeat(50));
         chatArea.setScrollPerc(100);
         screen.render();
@@ -319,7 +319,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       }
 
       if (lower.startsWith("/compact")) {
-        chatArea.pushLine("{cyan-fg}◈{/cyan-fg} Conversation compacted.");
+        chatArea.pushLine("{white-fg}◈{/white-fg} Conversation compacted.");
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
         screen.render();
@@ -340,7 +340,7 @@ export function startTui(options: TuiOptions): Promise<void> {
     }
 
     async function runGoal(goal: string): Promise<void> {
-      chatArea.pushLine(`{cyan-fg}◈{/cyan-fg} Goal: ${goal}`);
+      chatArea.pushLine(`{white-fg}◈{/white-fg} Goal: ${goal}`);
       chatArea.pushLine(
         "{grey-fg}🎭 Roles: planner → explorer → implementer → reviewer + tester → integrator{/grey-fg}",
       );
@@ -392,7 +392,7 @@ export function startTui(options: TuiOptions): Promise<void> {
             : task.status === "failed"
               ? "{red-fg}✗{/red-fg}"
               : task.status === "running"
-                ? "{cyan-fg}▶{/cyan-fg}"
+                ? "{white-fg}▶{/white-fg}"
                 : "·";
         chatArea.pushLine(
           `    ${tBadge} ${task.role.padEnd(11)} ${task.title}`,

@@ -31,7 +31,7 @@ export interface OpenCodeAdapter {
 // --- Real OpenCode SDK Adapter ---
 
 export class SdkOpenCodeAdapter implements OpenCodeAdapter {
-  private client: import("@opencode-ai/sdk").OpencodeClient | null = null;
+  private client: import("../opencode-sdk/client.js").OpencodeClient | null = null;
   private serverClose: (() => void) | null = null;
 
   constructor(private readonly options: OpenCodeAdapterOptions) {}
@@ -50,7 +50,7 @@ export class SdkOpenCodeAdapter implements OpenCodeAdapter {
       );
     }
 
-    const { createOpencodeClient } = await import("@opencode-ai/sdk");
+    const { createOpencodeClient } = await import("../opencode-sdk/client.js");
     this.client = createOpencodeClient({ baseUrl, directory: this.options.cwd });
   }
 
@@ -145,14 +145,14 @@ export class SdkOpenCodeAdapter implements OpenCodeAdapter {
     }
   }
 
-  private requiredClient(): import("@opencode-ai/sdk").OpencodeClient {
+  private requiredClient(): import("../opencode-sdk/client.js").OpencodeClient {
     if (!this.client) throw new Error("Adapter not ready. Call ensureReady() first.");
     return this.client;
   }
 }
 
 async function startLocalServer(cwd: string): Promise<{ url: string; close: () => void }> {
-  const { createOpencodeServer } = await import("@opencode-ai/sdk/server");
+  const { createOpencodeServer } = await import("../opencode-sdk/server.js");
   const server = await createOpencodeServer({
     config: { logLevel: "ERROR" },
     hostname: "127.0.0.1",

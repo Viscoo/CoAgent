@@ -191,7 +191,7 @@ async function main(argv: string[]): Promise<void> {
         const opencodeBin = await findOpencodeBinary();
         if (opencodeBin) {
           try {
-            const { createOpencodeTui } = await import("@opencode-ai/sdk/server");
+            const { createOpencodeTui } = await import("./opencode-sdk/server.js");
             console.log("Launching OpenCode with CoAgent config...");
             createOpencodeTui({
               project: cwd,

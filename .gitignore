@@ -7,3 +7,9 @@ node_modules/
 # OpenCode source (auto-downloaded by postinstall)
 .opencode-source/
 opencode-source.zip
+
+# Temp / preview files
+.coagent-logo-preview.html
+.coagent-screenshot.*
+.arts/
+scripts/capture-screen.ps1

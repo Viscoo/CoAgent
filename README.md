@@ -1,6 +1,18 @@
 # CoAgent
 
-**CoAgent** is a lightweight multi-agent orchestration layer for **OpenCode**. It keeps OpenCode as the execution engine and adds task planning, role-based child sessions, run ledgers, review gates, merge checks, and retry logic.
+English | [中文](./README_zh.md)
+
+**CoAgent** is a lightweight multi-agent orchestration layer for **OpenCode**. It keeps OpenCode as the execution engine and adds task planning, role-based child sessions, run ledgers, review gates, merge checks, retry logic, and a multi-agent collective consciousness layer (Hub).
+
+## Features
+
+- **Task Orchestration** — Break goals into task graphs, execute in parallel by dependency
+- **6 Agent Roles** — Planner / Explorer / Implementer / Reviewer / Tester / Integrator
+- **Review Gates** — Code changes must pass Review and Test gates before merging
+- **Safety Policies** — Read-only roles blocked from writing, implementers scoped, conflict detection
+- **Retry Logic** — Failed tasks retry with exponential backoff, configurable retry count
+- **Hub Collective Consciousness** — Multiple CLI windows share state, communicate, and collaborate in parallel
+- **TUI Interface** — Full-screen terminal interactive UI
 
 ## Quick Start
 
@@ -58,6 +70,8 @@ npm run dev -- run "refactor the logger"
 | `coagent logs [run-id]` | View decision log and artifacts for a run |
 | `coagent chat` | Open an interactive CoAgent session (REPL) |
 | `coagent open` | Open CoAgent interactively (tries OpenCode TUI first, falls back to chat) |
+| `coagent hub` | Start CoAgent Hub server (multi-agent communication) |
+| `coagent ps` | List all online agents |
 | `coagent version` | Print version |
 
 ### Options
@@ -70,6 +84,10 @@ npm run dev -- run "refactor the logger"
 | `--dry-run` | `false` | Plan/ledger only, no OpenCode |
 | `--start-server` | `false` | Start `opencode serve` automatically |
 | `--opencode-url <url>` | — | OpenCode server URL |
+| `--port <n>` | `4876` | Hub port |
+| `--host <addr>` | `127.0.0.1` | Hub listen address |
+| `--role <name>` | `general` | Agent role name |
+| `--hub <url>` | `http://127.0.0.1:4876` | Hub URL (for `ps` command) |
 
 ## Agent Roles
 
@@ -94,6 +112,42 @@ plan ──► explore ──► implement ──┬──► review ──┐
                           ✓ clean — ready to apply
                           △ needs-integrator — conflicts found
                           ⊘ blocked — gate failure or policy violation
+```
+
+## Hub Collective Consciousness
+
+CoAgent Hub lets multiple CLI windows see each other, share experience, and work in parallel:
+
+```
+┌────────────────────────────────────────────────────┐
+│                    CoAgent Hub                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────┐ │
+│  │ WebSocket    │  │ Agent State  │  │ Shared   │ │
+│  │ Server :4876 │  │ Store (mem)  │  │ Knowledge│ │
+│  └──────┬───────┘  └──────┬───────┘  └────┬─────┘ │
+│  ┌──────┴──────────────────┴───────────────┴──────┐ │
+│  │          Message Routing & Event Dispatch       │ │
+│  └──────────────────────┬─────────────────────────┘ │
+└──────────────────────────┼──────────────────────────┘
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+  ┌────┴─────┐      ┌─────┴─────┐      ┌─────┴─────┐
+  │ Agent A  │      │ Agent B   │      │ Agent C   │
+  │ CLI Win1 │      │ CLI Win2  │      │ CLI Win3  │
+  │ planner  │      │ implement │      │ reviewer  │
+  └──────────┘      └───────────┘      └───────────┘
+```
+
+```bash
+# Start Hub
+coagent hub
+
+# Open an agent in another terminal (auto-connects to Hub)
+coagent open
+
+# List all online agents
+coagent ps
 ```
 
 ## Directory Layout
@@ -156,4 +210,39 @@ bun test
 ## Requirements
 
 - Node.js >= 22 or Bun >= 1.1
-- OpenCode server (or `@opencode-ai/sdk`)
+- OpenCode CLI binary (for `coagent open` and `--start-server` modes)
+
+## Third-Party Licenses
+
+This project includes source code from the following third-party projects:
+
+### OpenCode AI SDK
+
+- **Source**: [opencode-ai/opencode](https://github.com/opencode-ai/opencode) (`packages/sdk/js/`)
+- **Integrated in**: `src/opencode-sdk/`
+- **License**: MIT License
+- **Copyright**: Copyright (c) 2025 opencode
+
+```
+MIT License
+
+Copyright (c) 2025 opencode
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
