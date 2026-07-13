@@ -6,6 +6,31 @@ import { MockAdapter } from "../adapters/mock-adapter.js";
 
 const VERSION = "0.2.0";
 
+function displayWidth(str: string): number {
+  let w = 0;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0)!;
+    if (cp >= 0x1100 && (
+      cp <= 0x115f || cp === 0x2329 || cp === 0x232a ||
+      (cp >= 0x2e80 && cp <= 0xa4cf && cp !== 0x303f) ||
+      (cp >= 0xac00 && cp <= 0xd7a3) ||
+      (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xfe10 && cp <= 0xfe19) ||
+      (cp >= 0xfe30 && cp <= 0xfe6f) ||
+      (cp >= 0xff01 && cp <= 0xff60) ||
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      (cp >= 0x1f300 && cp <= 0x1f9ff) ||
+      (cp >= 0x20000 && cp <= 0x2fffd) ||
+      (cp >= 0x30000 && cp <= 0x3fffd)
+    )) {
+      w += 2;
+    } else {
+      w += 1;
+    }
+  }
+  return w;
+}
+
 export interface TuiOptions {
   cwd: string;
   failureRate?: number;
@@ -116,8 +141,8 @@ export function startTui(options: TuiOptions): Promise<void> {
       const ver = `{#6c7086-fg}CoAgent v${VERSION}{/#6c7086-fg}`;
       inputLine.setContent(`${prompt}${inputBuf}${ver}`);
       screen.render();
-      const promptLen = 2;
-      const cursorCol = promptLen + cursorPos;
+      const promptDisplayWidth = 2;
+      const cursorCol = promptDisplayWidth + displayWidth(inputBuf.slice(0, cursorPos));
       const termHeight = screen.height as number;
       try {
         screen.program.cup(termHeight - 1, cursorCol);
@@ -418,13 +443,18 @@ export function startTui(options: TuiOptions): Promise<void> {
           renderAutoComplete();
           return;
         }
-        if (key.name === "tab" || key.name === "return") {
+        if (key.name === "return") {
           applyAutoComplete();
-          if (key.name === "return") {
-            submitInput();
-          }
+          submitInput();
           return;
         }
+      }
+
+      if (key.name === "tab") {
+        if (inputBuf.startsWith("/") && matchedCmds.length > 0) {
+          applyAutoComplete();
+        }
+        return;
       }
 
       if (key.name === "return" || key.name === "enter") {
