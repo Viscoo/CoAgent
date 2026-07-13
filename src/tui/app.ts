@@ -250,7 +250,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         return;
       }
 
-      if (lower === "/clear") {
+      if (cmd?.name === "/clear") {
         chatArea.setContent("");
         for (const l of buildLogoLines(screen.width as number)) chatArea.pushLine(l);
         chatArea.pushLine("");
@@ -259,10 +259,19 @@ export function startTui(options: TuiOptions): Promise<void> {
         return;
       }
 
-      if (lower === "/status") {
+      if (cmd?.name === "/clear") {
+        chatArea.setContent("");
+        for (const l of buildLogoLines(screen.width as number)) chatArea.pushLine(l);
+        chatArea.pushLine("");
+        chatArea.setScrollPerc(100);
+        screen.render();
+        return;
+      }
+
+      if (cmd?.name === "/status") {
         const run = await orchestrator.status();
         if (!run) {
-          chatArea.pushLine("{grey-fg}📭 No runs yet.{/grey-fg}");
+          chatArea.pushLine("{#6c7086-fg}📭 No runs yet.{/#6c7086-fg}");
           chatArea.pushLine("");
         } else {
           printRun(run);
@@ -272,14 +281,11 @@ export function startTui(options: TuiOptions): Promise<void> {
         return;
       }
 
-      if (lower.startsWith("/model")) {
-        const model = line.slice(6).trim();
-        if (model) {
-          chatArea.pushLine(`{white-fg}◈{/white-fg} Model set to: ${model}`);
+      if (cmd?.name === "/model") {
+        if (rest) {
+          chatArea.pushLine(`{white-fg}◈{/white-fg} Model set to: ${rest}`);
         } else {
-          chatArea.pushLine(
-            "{white-fg}◈{/white-fg} Current model: opencode/claude-sonnet-4-6",
-          );
+          chatArea.pushLine("{white-fg}◈{/white-fg} Current model: opencode/claude-sonnet-4-6");
         }
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
@@ -287,50 +293,42 @@ export function startTui(options: TuiOptions): Promise<void> {
         return;
       }
 
-      if (lower.startsWith("/plan")) {
-        const goal = line.slice(5).trim();
-        if (!goal) {
-          chatArea.pushLine(
-            "{red-fg}✗{/red-fg} /plan requires a goal. Usage: /plan <goal>",
-          );
+      if (cmd?.name === "/plan") {
+        if (!rest) {
+          chatArea.pushLine("{red-fg}✗{/red-fg} /plan requires a goal. Usage: /plan <goal>");
           chatArea.pushLine("");
           chatArea.setScrollPerc(100);
           screen.render();
           return;
         }
-        chatArea.pushLine(`{white-fg}◈{/white-fg} Planning: ${goal}`);
+        chatArea.pushLine(`{white-fg}◈{/white-fg} Planning: ${rest}`);
         chatArea.pushLine("─".repeat(50));
         chatArea.setScrollPerc(100);
         screen.render();
         try {
-          const run = await orchestrator.plan(goal);
+          const run = await orchestrator.plan(rest);
           printRun(run);
         } catch (error) {
-          chatArea.pushLine(
-            `{red-fg}✗ Error: ${error instanceof Error ? error.message : String(error)}{/red-fg}`,
-          );
+          chatArea.pushLine(`{red-fg}✗ Error: ${error instanceof Error ? error.message : String(error)}{/red-fg}`);
         }
         chatArea.setScrollPerc(100);
         screen.render();
         return;
       }
 
-      if (lower.startsWith("/run")) {
-        const goal = line.slice(4).trim();
-        if (!goal) {
-          chatArea.pushLine(
-            "{red-fg}✗{/red-fg} /run requires a goal. Usage: /run <goal>",
-          );
+      if (cmd?.name === "/run") {
+        if (!rest) {
+          chatArea.pushLine("{red-fg}✗{/red-fg} /run requires a goal. Usage: /run <goal>");
           chatArea.pushLine("");
           chatArea.setScrollPerc(100);
           screen.render();
           return;
         }
-        await runGoal(goal);
+        await runGoal(rest);
         return;
       }
 
-      if (lower.startsWith("/compact")) {
+      if (cmd?.name === "/compact") {
         chatArea.pushLine("{white-fg}◈{/white-fg} Conversation compacted.");
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
