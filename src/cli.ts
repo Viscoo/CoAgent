@@ -163,7 +163,6 @@ async function main(argv: string[]): Promise<void> {
       const check = await fetch("http://127.0.0.1:4876/health", { signal: AbortSignal.timeout(1000) });
       if (check.ok) {
         hubClient = new AgentClient({
-          name: `agent-${process.pid}`,
           projectDir: cwd,
           role: stringFlag(parsed, "role") ?? "general",
           goal: "",
@@ -171,7 +170,7 @@ async function main(argv: string[]): Promise<void> {
         });
         await hubClient.connect();
         hubClient.updateStatus("busy", "OpenCode session active");
-        console.log(`🧠 Connected to CoAgent Hub`);
+        console.log(`🧠 Connected to CoAgent Hub as ${hubClient.name}`);
       }
     } catch {
       // Hub not running, proceed without

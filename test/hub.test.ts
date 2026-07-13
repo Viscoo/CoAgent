@@ -10,6 +10,7 @@ import {
   newMessageId,
   nowIso,
   defaultProfile,
+  generateFruitName,
 } from "../src/hub/types.js";
 
 let nextPort = 34876;
@@ -127,6 +128,17 @@ describe("Hub Types — 工具函数", () => {
   test("makeMessage 支持 to 参数", () => {
     const msg = makeMessage("agent.message", "agent_1", { text: "hi" }, "agent_2");
     expect(msg.to).toBe("agent_2");
+  });
+
+  test("generateFruitName 生成 形容词+水果 格式的名字", () => {
+    const name = generateFruitName();
+    expect(name.length).toBeGreaterThan(3);
+    expect(name[0]).toMatch(/[A-Z]/);
+  });
+
+  test("generateFruitName 每次生成不同的名字", () => {
+    const names = new Set(Array.from({ length: 50 }, () => generateFruitName()));
+    expect(names.size).toBeGreaterThan(1);
   });
 });
 
@@ -514,11 +526,37 @@ describe("AgentClient 客户端", () => {
     await client.disconnect();
   });
 
-  test("connect 后 connected 属性为 true", async () => {
-    const { client } = await connectClient(hubUrl, "conn-check");
-    expect(client.connected).toBe(true);
+  test("AgentClient 默认使用水果名", async () => {
+    const client = new AgentClient({ hubUrl });
+    expect(client.name).toBeTruthy();
+    expect(client.name[0]).toMatch(/[A-Z]/);
+    expect(client.name.length).toBeGreaterThan(3);
     await client.disconnect();
   });
+
+  test("不同 AgentClient 生成不同水果名", () => {
+    const names = new Set(Array.from({ length: 20 }, () => new AgentClient({ hubUrl }).name));
+    expect(names.size).toBeGreaterThan(1);
+  });
+
+  test("水果名在 Hub 注册后可被其他 agent 看到", async () => {
+    const { client: client1 } = await connectClient(hubUrl, undefined as any);
+    await sleep(100);
+    const { registered } = await connectClient(hubUrl, undefined as any);
+    const peerNames = registered.peers.map((p: AgentInfo) => p.name);
+    expect(peerNames).toContain(client1.name);
+    await client1.disconnect();
+  });
+
+  test("水果名在 coagent ps 中可见", async () => {
+    const { client } = await connectClient(hubUrl, undefined as any);
+    await sleep(100);
+    const agents = hub.getAgentList();
+    const found = agents.find((a) => a.id === client.id);
+    expect(found?.name).toBe(client.name);
+    await client.disconnect();
+  });
+
 
   test("disconnect 后 connected 属性为 false", async () => {
     const { client } = await connectClient(hubUrl, "disc-check");

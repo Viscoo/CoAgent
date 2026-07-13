@@ -89,6 +89,33 @@ export interface BroadcastPayload {
 
 // ─────────────── 工具函数 ───────────────
 
+const FRUITS = [
+  "Apple", "Apricot", "Avocado", "Banana", "Blackberry", "Blueberry",
+  "Cherry", "Coconut", "Cranberry", "Dragonfruit", "Durian", "Fig",
+  "Grape", "Grapefruit", "Guava", "Kiwi", "Lemon", "Lime",
+  "Mango", "Melon", "Nectarine", "Orange", "Papaya", "Peach",
+  "Pear", "Persimmon", "Pineapple", "Plum", "Pomegranate", "Raspberry",
+  "Strawberry", "Tangerine", "Watermelon", "Yuzu",
+  "Artichoke", "Broccoli", "Cabbage", "Carrot", "Cauliflower",
+  "Celery", "Corn", "Cucumber", "Eggplant", "Garlic", "Ginger",
+  "Kale", "Leek", "Lettuce", "Mushroom", "Onion", "Pepper",
+  "Potato", "Pumpkin", "Radish", "Spinach", "Squash", "Tomato",
+  "Turnip", "Zucchini",
+];
+
+const ADJECTIVES = [
+  "Brave", "Calm", "Clever", "Curious", "Daring", "Eager",
+  "Gentle", "Happy", "Honest", "Kind", "Lively", "Noble",
+  "Patient", "Quick", "Quiet", "Radiant", "Swift", "Warm",
+  "Wise", "Zen",
+];
+
+export function generateFruitName(): string {
+  const adj = ADJECTIVES[randomBytes(1)[0] % ADJECTIVES.length];
+  const fruit = FRUITS[randomBytes(1)[0] % FRUITS.length];
+  return `${adj}${fruit}`;
+}
+
 export function newAgentId(): string {
   return `agent_${randomBytes(4).toString("hex")}`;
 }

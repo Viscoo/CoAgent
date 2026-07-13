@@ -182,7 +182,9 @@ export class Orchestrator {
           title: task.title,
           attempt,
           maxAttempts: maxRetries + 1,
-          message: `${task.role}: ${task.title} (attempt ${attempt}/${maxRetries + 1})`,
+          message: attempt > 1
+            ? `${task.role}: ${task.title} (retry ${attempt}/${maxRetries + 1})`
+            : `${task.role}: ${task.title}`,
           timestamp: nowIso(),
         });
 
@@ -213,7 +215,9 @@ export class Orchestrator {
           title: task.title,
           attempt,
           maxAttempts: maxRetries + 1,
-          message: `${task.role}: completed (${diffFiles.length} files)`,
+          message: diffFiles.length > 0
+            ? `${task.role}: completed (changed ${diffFiles.length} file${diffFiles.length > 1 ? "s" : ""})`
+            : `${task.role}: completed`,
           timestamp: nowIso(),
         });
 

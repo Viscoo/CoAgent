@@ -2,7 +2,7 @@
 // 供每个 CoAgent CLI 实例连接 Hub、注册、收发消息
 
 import { EventEmitter } from "node:events";
-import { type AgentInfo, type AgentStatus, type HubMessage, makeMessage, nowIso, defaultProfile } from "./types.js";
+import { type AgentInfo, type AgentStatus, type HubMessage, makeMessage, nowIso, defaultProfile, generateFruitName } from "./types.js";
 
 const DEFAULT_HUB_URL = "ws://127.0.0.1:4876";
 const HEARTBEAT_INTERVAL_MS = 10_000;  // 每 10s 发一次心跳
@@ -50,7 +50,7 @@ export class AgentClient extends EventEmitter {
     super();
     this.options = {
       hubUrl: options.hubUrl ?? DEFAULT_HUB_URL,
-      name: options.name ?? `agent-${process.pid}`,
+      name: options.name ?? generateFruitName(),
       projectDir: options.projectDir ?? process.cwd(),
       role: options.role ?? "general",
       goal: options.goal ?? "",
@@ -62,6 +62,10 @@ export class AgentClient extends EventEmitter {
 
   get id(): string {
     return this.agentId;
+  }
+
+  get name(): string {
+    return this.options.name;
   }
 
   get connected(): boolean {

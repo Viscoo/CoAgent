@@ -1,6 +1,6 @@
 import blessed from "blessed";
 import { buildLogoLines } from "./logo.js";
-import { matchSlashCommands, SLASH_COMMANDS } from "./commands.js";
+import { matchSlashCommands, resolveCommand, SLASH_COMMANDS } from "./commands.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 import { displayWidth } from "./logo.js";
@@ -208,9 +208,10 @@ export function startTui(options: TuiOptions): Promise<void> {
     }
 
     async function handleCommand(line: string): Promise<void> {
-      const lower = line.toLowerCase();
+      const cmd = resolveCommand(line.split(" ")[0] ?? "");
+      const rest = line.includes(" ") ? line.slice(line.indexOf(" ") + 1) : "";
 
-      if (lower === "/exit" || lower === "/quit") {
+      if (cmd?.name === "/exit") {
         chatArea.pushLine("{grey-fg}Goodbye! 👋{/grey-fg}");
         chatArea.setScrollPerc(100);
         screen.render();
@@ -220,18 +221,29 @@ export function startTui(options: TuiOptions): Promise<void> {
         return;
       }
 
-      if (lower === "/help") {
+      if (cmd?.name === "/help") {
         chatArea.pushLine("{bold}Available Commands:{/bold}");
         chatArea.pushLine("─".repeat(50));
-        for (const cmd of SLASH_COMMANDS) {
+        for (const c of SLASH_COMMANDS) {
+          const alias = c.aliases ? ` (${c.aliases.join(", ")})` : "";
           chatArea.pushLine(
-            `  {white-fg}${cmd.name.padEnd(12)}{/white-fg} ${cmd.description}`,
+            `  {white-fg}${c.name.padEnd(12)}{/white-fg} ${c.description}${alias}`,
           );
         }
         chatArea.pushLine("");
-        chatArea.pushLine(
-          "{grey-fg}Type a goal directly to run it through the agent pipeline.{/grey-fg}",
-        );
+        chatArea.pushLine("{#6c7086-fg}Shortcuts: Ctrl+A/E=home/end  Ctrl+U/K=delete line  Ctrl+Left/Right=word jump{/#6c7086-fg}");
+        chatArea.pushLine("{#6c7086-fg}Type a goal directly to run it through the agent pipeline.{/#6c7086-fg}");
+        chatArea.pushLine("");
+        chatArea.setScrollPerc(100);
+        screen.render();
+        return;
+      }
+
+      if (cmd?.name === "/new") {
+        chatArea.setContent("");
+        for (const l of buildLogoLines(screen.width as number)) chatArea.pushLine(l);
+        chatArea.pushLine("");
+        chatArea.pushLine("{white-fg}◈{/white-fg} New session started.");
         chatArea.pushLine("");
         chatArea.setScrollPerc(100);
         screen.render();
@@ -420,9 +432,8 @@ export function startTui(options: TuiOptions): Promise<void> {
           renderAutoComplete();
           return;
         }
-        if (key.name === "return") {
+        if (key.name === "return" || key.name === "tab") {
           applyAutoComplete();
-          submitInput();
           return;
         }
       }
@@ -440,45 +451,76 @@ export function startTui(options: TuiOptions): Promise<void> {
       }
 
       if (key.name === "backspace") {
-        if (cursorPos > 0) {
-          inputBuf =
-            inputBuf.slice(0, cursorPos - 1) + inputBuf.slice(cursorPos);
+        if (key.ctrl) {
+          const before = inputBuf.slice(0, cursorPos);
+          const wordEnd = before.search(/\S\s*$/);
+          const cutTo = wordEnd >= 0 ? wordEnd + 1 : 0;
+          inputBuf = inputBuf.slice(0, cutTo) + inputBuf.slice(cursorPos);
+          cursorPos = cutTo;
+        } else if (cursorPos > 0) {
+          inputBuf = inputBuf.slice(0, cursorPos - 1) + inputBuf.slice(cursorPos);
           cursorPos--;
-          updateAutoComplete();
-          renderInput();
         }
+        updateAutoComplete();
+        renderInput();
         return;
       }
 
       if (key.name === "delete") {
         if (cursorPos < inputBuf.length) {
-          inputBuf =
-            inputBuf.slice(0, cursorPos) + inputBuf.slice(cursorPos + 1);
+          inputBuf = inputBuf.slice(0, cursorPos) + inputBuf.slice(cursorPos + 1);
           updateAutoComplete();
           renderInput();
         }
         return;
       }
 
+      if (key.full === "C-u") {
+        inputBuf = inputBuf.slice(cursorPos);
+        cursorPos = 0;
+        updateAutoComplete();
+        renderInput();
+        return;
+      }
+
+      if (key.full === "C-k") {
+        inputBuf = inputBuf.slice(0, cursorPos);
+        updateAutoComplete();
+        renderInput();
+        return;
+      }
+
       if (key.name === "left") {
-        if (cursorPos > 0) cursorPos--;
+        if (key.ctrl) {
+          const before = inputBuf.slice(0, cursorPos).replace(/\s+$/, "");
+          const match = before.match(/\S*$/);
+          cursorPos = match ? match.index ?? cursorPos : cursorPos;
+        } else if (cursorPos > 0) {
+          cursorPos--;
+        }
         renderInput();
         return;
       }
 
       if (key.name === "right") {
-        if (cursorPos < inputBuf.length) cursorPos++;
+        if (key.ctrl) {
+          const after = inputBuf.slice(cursorPos);
+          const match = after.match(/^\S*\s*/);
+          cursorPos += match ? match[0].length : 0;
+        } else if (cursorPos < inputBuf.length) {
+          cursorPos++;
+        }
         renderInput();
         return;
       }
 
-      if (key.name === "home") {
+      if (key.name === "home" || key.full === "C-a") {
         cursorPos = 0;
         renderInput();
         return;
       }
 
-      if (key.name === "end") {
+      if (key.name === "end" || key.full === "C-e") {
         cursorPos = inputBuf.length;
         renderInput();
         return;
