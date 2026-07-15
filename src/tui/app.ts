@@ -7,63 +7,47 @@ import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 import { displayWidth } from "./logo.js";
 import {
-  getCurrentModel,
-  setCurrentModel,
-  resolveModelInput,
-  formatModelString,
-  getKnownProviders,
-  loadConfig,
-  saveConfig,
-  findConfigFile,
+  getCurrentModel, setCurrentModel, resolveModelInput,
+  formatModelString, getKnownProviders, findConfigFile,
   type ModelConfig,
 } from "./model-config.js";
 
 const VERSION = "0.2.0";
 
-const THEMES: Record<string, { bg: string; fg: string; accent: string; dim: string; border: string; name: string }> = {
-  dark: { bg: "#0f0f1a", fg: "#cdd6f4", accent: "#8b5cf6", dim: "#6c7086", border: "#6366f1", name: "Dark" },
-  light: { bg: "#f5f5f5", fg: "#1e1e2e", accent: "#6366f1", dim: "#9ca3af", border: "#6366f1", name: "Light" },
-  catppuccin: { bg: "#1e1e2e", fg: "#cdd6f4", accent: "#cba6f7", dim: "#6c7086", border: "#89b4fa", name: "Catppuccin" },
-  tokyo: { bg: "#1a1b26", fg: "#a9b1d6", accent: "#7aa2f7", dim: "#565f89", border: "#3b4261", name: "Tokyo Night" },
+const T = {
+  bg: "#0a0a0a", bgPanel: "#141414", bgElement: "#1e1e1e", bgMenu: "#1e1e1e",
+  text: "#eeeeee", textMuted: "#808080", primary: "#fab283", secondary: "#5c9cf5",
+  accent: "#9d7cd8", error: "#e06c75", warning: "#f5a742", success: "#7fd88f",
+  info: "#56b6c2", border: "#484848", borderActive: "#606060",
+  diffAdded: "#4fd6be", diffRemoved: "#c53b53",
 };
 
+function fg(c: string, t: string): string { return "{" + c + "-fg}" + t + "{/}"; }
+function bold(t: string): string { return "{bold}" + t + "{/bold}"; }
+function hr(): string { return fg(T.border, "─".repeat(50)); }
+
 const AGENT_ROLES = [
-  { id: "planner", name: "Planner", desc: "Break down goals into tasks" },
-  { id: "explorer", name: "Explorer", desc: "Inspect repo and find risks" },
-  { id: "implementer", name: "Implementer", desc: "Make scoped code changes" },
-  { id: "reviewer", name: "Reviewer", desc: "Review for bugs & regressions" },
-  { id: "tester", name: "Tester", desc: "Run verification commands" },
-  { id: "integrator", name: "Integrator", desc: "Resolve conflicts, final merge" },
+  { id: "planner", name: "Plan", color: T.accent, desc: "Break down goals into tasks" },
+  { id: "explorer", name: "Explore", color: T.info, desc: "Inspect repo and find risks" },
+  { id: "implementer", name: "Build", color: T.primary, desc: "Make scoped code changes" },
+  { id: "reviewer", name: "Review", color: T.secondary, desc: "Review for bugs & regressions" },
+  { id: "tester", name: "Test", color: T.success, desc: "Run verification commands" },
+  { id: "integrator", name: "Integrate", color: T.warning, desc: "Resolve conflicts, final merge" },
 ];
 
+const SIDEBAR_WIDTH = 32;
+
 export interface TuiOptions {
-  cwd: string;
-  failureRate?: number;
-  concurrency?: number;
-  retries?: number;
+  cwd: string; failureRate?: number; concurrency?: number; retries?: number;
 }
 
-interface SessionEntry {
-  id: string;
-  goal: string;
-  status: string;
-  createdAt: string;
-}
+interface SessionEntry { id: string; goal: string; status: string; createdAt: string; }
 
 export function startTui(options: TuiOptions): Promise<void> {
   return new Promise((resolve) => {
-    let currentTheme = "dark";
-    let theme = THEMES[currentTheme];
-    let sidebarVisible = true;
-    let currentAgentRole = "planner";
+    let sidebarVisible = false;
+    let currentAgentRole = "implementer";
     let messageCount = 0;
-
-    const screen = blessed.screen({
-      smartCSR: true,
-      title: "CoAgent",
-      fullUnicode: true,
-    });
-
     let inputBuf = "";
     let cursorPos = 0;
     let showingAutoComplete = false;
@@ -73,254 +57,188 @@ export function startTui(options: TuiOptions): Promise<void> {
     let historyIdx = -1;
     let isProcessing = false;
 
+    const screen = blessed.screen({ smartCSR: true, title: "CoAgent", fullUnicode: true });
+
     const adapter = new MockAdapter({ failureRate: options.failureRate ?? 0 });
     const orchestrator = new Orchestrator({
-      cwd: options.cwd,
-      maxConcurrency: options.concurrency ?? 2,
-      dryRun: false,
-      adapter,
+      cwd: options.cwd, maxConcurrency: options.concurrency ?? 2, dryRun: false, adapter,
       maxRetries: options.retries ?? 2,
       onProgress: (event) => {
-        const icon =
-          event.kind === "task-complete"
-            ? "{green-fg}✓{/green-fg}"
-            : event.kind === "task-fail"
-              ? "{red-fg}✗{/red-fg}"
-              : event.kind === "task-retry"
-                ? "{yellow-fg}↻{/yellow-fg}"
-                : event.kind === "task-start"
-                  ? "{white-fg}▶{/white-fg}"
-                  : "·";
-        const retry =
-          event.attempt && event.maxAttempts && event.attempt > 1
-            ? ` [{yellow-fg}${event.attempt}/${event.maxAttempts}{/yellow-fg}]`
-            : "";
-        chatArea.pushLine(`${icon} ${event.message}${retry}`);
-        if (event.error) {
-          chatArea.pushLine(`  └─ {red-fg}${event.error}{/red-fg}`);
-        }
+        const agent = AGENT_ROLES.find((a) => a.id === event.role);
+        const color = agent?.color ?? T.text;
+        const icon = event.kind === "task-complete" ? fg(T.success, "✓")
+          : event.kind === "task-fail" ? fg(T.error, "✗")
+          : event.kind === "task-retry" ? fg(T.warning, "↻")
+          : event.kind === "task-start" ? fg(color, "▶") : "·";
+        const retry = (event.attempt && event.attempt > 1)
+          ? " " + fg(T.warning, event.attempt + "/" + event.maxAttempts) : "";
+        chatArea.pushLine(icon + " " + event.message + retry);
+        if (event.error) chatArea.pushLine("  └─ " + fg(T.error, event.error));
         chatArea.setScrollPerc(100);
         screen.render();
       },
     });
 
-    const sidebarWidth = 22;
-
     const sidebar = blessed.box({
-      parent: screen,
-      top: 0,
-      right: 0,
-      width: sidebarWidth,
-      height: "100%-1",
-      style: { bg: theme.bg, fg: theme.dim },
-      border: { type: "line" },
-      tags: true,
-      padding: { left: 1, right: 1 },
-      label: ` {bold}CoAgent{/bold} `,
+      parent: screen, top: 0, right: 0, width: SIDEBAR_WIDTH, height: "100%",
+      style: { bg: T.bgPanel, fg: T.textMuted }, tags: true,
+      padding: { top: 1, left: 2, right: 1, bottom: 1 }, hidden: !sidebarVisible,
+    });
+
+    const mainArea = blessed.box({
+      parent: screen, top: 0, left: 0,
+      width: "100%-" + (sidebarVisible ? SIDEBAR_WIDTH : 0), height: "100%",
+      style: { bg: T.bg },
     });
 
     const chatArea = blessed.log({
-      parent: screen,
-      top: 0,
-      left: 0,
-      width: `100%-${sidebarVisible ? sidebarWidth : 0}`,
-      height: "100%-1",
-      scrollable: true,
-      alwaysScroll: true,
-      scrollbar: {
-        ch: "│",
-        style: { fg: theme.accent },
-        track: { bg: theme.bg },
-      },
-      tags: true,
-      padding: { left: 2, right: 2 },
-      style: { bg: theme.bg, fg: theme.fg },
-      mouse: true,
+      parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-4",
+      scrollable: true, alwaysScroll: true,
+      scrollbar: { ch: "│", style: { fg: T.border }, track: { bg: T.bg } },
+      tags: true, padding: { left: 3, right: 2 },
+      style: { bg: T.bg, fg: T.text }, mouse: true,
     });
 
-    const inputLine = blessed.box({
-      parent: screen,
-      bottom: 0,
-      left: 0,
-      width: "100%",
-      height: 1,
-      style: { bg: theme.bg, fg: theme.fg },
-      tags: true,
+    for (const line of buildLogoLines(screen.width as number)) chatArea.pushLine(line);
+    chatArea.pushLine("");
+    chatArea.pushLine(fg(T.textMuted, "Welcome! Type a goal to run, or /help for commands."));
+    chatArea.pushLine("");
+
+    const inputBorder = blessed.box({
+      parent: mainArea, bottom: 2, left: 0, width: "100%", height: 1,
+      style: { bg: T.bgElement }, tags: true,
+    });
+
+    const inputArea = blessed.box({
+      parent: mainArea, bottom: 2, left: 1, width: "100%-1", height: 1,
+      style: { bg: T.bgElement, fg: T.text }, tags: true, padding: { left: 2, right: 2 },
+    });
+
+    const inputMeta = blessed.box({
+      parent: mainArea, bottom: 3, left: 1, width: "100%-1", height: 1,
+      style: { bg: T.bgElement, fg: T.textMuted }, tags: true, padding: { left: 2, right: 2 },
+    });
+
+    const footer = blessed.box({
+      parent: mainArea, bottom: 0, left: 0, width: "100%", height: 2,
+      style: { bg: T.bg, fg: T.textMuted }, tags: true, padding: { left: 3, right: 2 },
     });
 
     const autoCompleteBox = blessed.box({
-      parent: screen,
-      bottom: 1,
-      left: 2,
-      width: "50%",
-      height: 0,
-      hidden: true,
-      style: { bg: "#1e1e2e", fg: theme.fg },
-      border: { type: "line" as const, fg: theme.border as any },
-      tags: true,
-      label: " Commands ",
+      parent: screen, bottom: 5, left: 3, width: "45%", height: 0, hidden: true,
+      style: { bg: T.bgMenu, fg: T.text }, border: { type: "line", fg: T.border as any },
+      tags: true, label: " Commands ", padding: { left: 1, right: 1 },
     });
 
-    function renderSidebar(): void {
-      if (!sidebarVisible) {
-        sidebar.hide();
-        chatArea.width = "100%";
-        return;
-      }
-      sidebar.show();
-      chatArea.width = `100%-${sidebarWidth}`;
-      const model = getCurrentModel(options.cwd);
-      const lines: string[] = [];
-      lines.push(`{bold}{${theme.fg}-fg}Model{/}`);
-      lines.push(`  {${theme.accent}-fg}${formatModelString(model)}{/}`);
-      lines.push("");
-      lines.push(`{bold}{${theme.fg}-fg}Agent{/}`);
+    function renderInput(): void {
       const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
-      lines.push(`  {${theme.accent}-fg}${agent?.name ?? currentAgentRole}{/}`);
-      lines.push(`  {${theme.dim}-fg}${agent?.desc ?? ""}{/}`);
-      lines.push("");
-      lines.push(`{bold}{${theme.fg}-fg}Theme{/}`);
-      lines.push(`  {${theme.accent}-fg}${THEMES[currentTheme]?.name ?? currentTheme}{/}`);
-      lines.push("");
-      lines.push(`{bold}{${theme.fg}-fg}Messages{/}`);
-      lines.push(`  {${theme.accent}-fg}${messageCount}{/}`);
-      lines.push("");
-      lines.push(`{bold}{${theme.fg}-fg}Directory{/}`);
+      const borderColor = agent?.color ?? T.primary;
+      inputBorder.setContent(fg(borderColor, "┃"));
+      inputArea.setContent(inputBuf || fg(T.textMuted, "Ask anything..."));
+      const model = getCurrentModel(options.cwd);
+      const modelName = model.model.length > 28 ? model.model.slice(0, 25) + "…" : model.model;
+      inputMeta.setContent(
+        fg(agent?.color ?? T.primary, agent?.name ?? "Build") + "  " +
+        fg(T.textMuted, "·") + "  " + fg(T.text, modelName) + "  " +
+        fg(T.textMuted, "·") + "  " + fg(T.textMuted, model.provider),
+      );
+      renderFooter();
+      screen.render();
+      const cursorCol = 4 + displayWidth(inputBuf.slice(0, cursorPos));
+      const termHeight = screen.height as number;
+      try { screen.program.cup(termHeight - 3, cursorCol); screen.program.showCursor(); } catch {}
+    }
+
+    function renderFooter(): void {
       const shortCwd = options.cwd.split(/[/\\]/).slice(-2).join("/");
-      lines.push(`  {${theme.dim}-fg}${shortCwd}{/}`);
-      lines.push("");
-      lines.push(`{${theme.dim}-fg}─── Shortcuts ───{/}`);
-      lines.push(`{${theme.dim}-fg}Ctrl+N  New session{/}`);
-      lines.push(`{${theme.dim}-fg}Ctrl+P  Command palette{/}`);
-      lines.push(`{${theme.dim}-fg}Ctrl+L  Session list{/}`);
-      lines.push(`{${theme.dim}-fg}F2      Cycle model{/}`);
-      lines.push(`{${theme.dim}-fg}Ctrl+B  Toggle sidebar{/}`);
-      lines.push(`{${theme.dim}-fg}Shift↵  Newline{/}`);
+      const left = fg(T.textMuted, shortCwd);
+      const right = fg(T.textMuted, "F2 model") + "  " + fg(T.textMuted, "Ctrl+B sidebar") +
+        "  " + fg(T.textMuted, "Ctrl+P commands") + "  " + fg(T.textMuted, "Ctrl+N new");
+      footer.setContent(left + "  " + right);
+    }
+
+    function renderSidebar(): void {
+      if (!sidebarVisible) { sidebar.hide(); mainArea.width = "100%"; return; }
+      sidebar.show();
+      mainArea.width = "100%-" + SIDEBAR_WIDTH;
+      const model = getCurrentModel(options.cwd);
+      const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
+      const shortCwd = options.cwd.split(/[/\\]/).slice(-2).join("/");
+      const lines = [
+        bold(fg(T.text, "CoAgent")), fg(T.textMuted, "v" + VERSION), "",
+        fg(T.textMuted, "─── Model ───"), fg(agent?.color ?? T.primary, formatModelString(model)), "",
+        fg(T.textMuted, "─── Agent ───"), fg(agent?.color ?? T.primary, agent?.name ?? currentAgentRole),
+        fg(T.textMuted, agent?.desc ?? ""), "",
+        fg(T.textMuted, "─── Messages ───"), fg(T.text, String(messageCount)), "",
+        fg(T.textMuted, "─── Directory ───"), fg(T.textMuted, shortCwd), "",
+        fg(T.textMuted, "─── Shortcuts ───"),
+        fg(T.textMuted, "Ctrl+N  New"), fg(T.textMuted, "Ctrl+P  Commands"),
+        fg(T.textMuted, "Ctrl+L  Sessions"), fg(T.textMuted, "Ctrl+B  Sidebar"),
+        fg(T.textMuted, "F2      Cycle model"), fg(T.textMuted, "Shift↵  Newline"),
+      ];
       sidebar.setContent(lines.join("\n"));
       screen.render();
     }
 
-    for (const line of buildLogoLines(screen.width as number)) {
-      chatArea.pushLine(line);
-    }
-    chatArea.pushLine("");
-    chatArea.pushLine("{grey-fg}Welcome! Type a goal to run, or /help for commands.{/grey-fg}");
-    chatArea.pushLine("");
-
-    function renderInput(): void {
-      const prompt = "{white-fg}❯{/white-fg} ";
-      inputLine.setContent(`${prompt}${inputBuf}`);
-      screen.render();
-      const promptDisplayWidth = 2;
-      const cursorCol = promptDisplayWidth + displayWidth(inputBuf.slice(0, cursorPos));
-      const termHeight = screen.height as number;
-      try {
-        screen.program.cup(termHeight - 1, cursorCol);
-        screen.program.showCursor();
-      } catch {}
-    }
-
     function renderAutoComplete(): void {
-      if (matchedCmds.length === 0 || !inputBuf.startsWith("/")) {
-        hideAutoComplete();
-        return;
-      }
+      if (matchedCmds.length === 0 || !inputBuf.startsWith("/")) { hideAutoComplete(); return; }
       showingAutoComplete = true;
       const lines = matchedCmds.map((c, i) => {
         const sel = i === selectedCmdIdx;
-        const name = sel
-          ? `{bold}{white-fg}${c.name}{/white-fg}{/bold}`
-          : `{white-fg}${c.name}{/white-fg}`;
-        const desc = sel
-          ? `{white-fg}${c.description}{/white-fg}`
-          : `{${theme.dim}-fg}${c.description}{/${theme.dim}-fg}`;
-        return ` ${name.padEnd(14)} ${desc}`;
+        const name = sel ? bold(fg(T.text, c.name)) : fg(T.text, c.name);
+        const desc = sel ? fg(T.text, c.description) : fg(T.textMuted, c.description);
+        const alias = c.aliases?.length ? " " + fg(T.textMuted, "(" + c.aliases.join(",") + ")") : "";
+        return " " + name.padEnd(14) + " " + desc + alias;
       });
       autoCompleteBox.setContent(lines.join("\n"));
-      autoCompleteBox.height = matchedCmds.length + 2;
+      autoCompleteBox.height = Math.min(matchedCmds.length + 2, 12);
       autoCompleteBox.show();
       screen.render();
     }
 
     function hideAutoComplete(): void {
-      showingAutoComplete = false;
-      matchedCmds = [];
-      selectedCmdIdx = 0;
-      autoCompleteBox.hide();
+      showingAutoComplete = false; matchedCmds = []; selectedCmdIdx = 0; autoCompleteBox.hide();
     }
 
     function updateAutoComplete(): void {
-      if (!inputBuf.startsWith("/")) {
-        hideAutoComplete();
-        return;
-      }
+      if (!inputBuf.startsWith("/")) { hideAutoComplete(); return; }
       matchedCmds = matchSlashCommands(inputBuf);
-      if (matchedCmds.length === 0) {
-        hideAutoComplete();
-        return;
-      }
-      selectedCmdIdx = 0;
-      renderAutoComplete();
+      if (matchedCmds.length === 0) { hideAutoComplete(); return; }
+      selectedCmdIdx = 0; renderAutoComplete();
     }
 
     function applyAutoComplete(): void {
       if (!showingAutoComplete || matchedCmds.length === 0) return;
       const cmd = matchedCmds[selectedCmdIdx];
-      if (cmd) {
-        inputBuf = cmd.name + " ";
-        cursorPos = inputBuf.length;
-        hideAutoComplete();
-        renderInput();
-      }
+      if (cmd) { inputBuf = cmd.name + " "; cursorPos = inputBuf.length; hideAutoComplete(); renderInput(); }
     }
 
     function submitInput(): void {
       const line = inputBuf.trim();
-      inputBuf = "";
-      cursorPos = 0;
-      hideAutoComplete();
-
+      inputBuf = ""; cursorPos = 0; hideAutoComplete();
       if (line) {
-        chatHistory.push(line);
-        historyIdx = chatHistory.length;
-        messageCount++;
-        chatArea.pushLine(`{white-fg}❯{/white-fg} ${line}`);
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-
+        chatHistory.push(line); historyIdx = chatHistory.length; messageCount++;
+        const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
+        chatArea.pushLine(fg(agent?.color ?? T.primary, "┃") + " " + fg(T.text, line));
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render();
         if (!isProcessing) {
           isProcessing = true;
-          handleCommand(line).finally(() => {
-            isProcessing = false;
-            renderInput();
-            renderSidebar();
-          });
+          handleCommand(line).finally(() => { isProcessing = false; renderInput(); renderSidebar(); });
         }
       }
-
       renderInput();
     }
 
     function loadSessions(): SessionEntry[] {
       const runsDir = join(options.cwd, ".coagent", "runs");
-      try {
-        if (!statSync(runsDir).isDirectory()) return [];
-      } catch {
-        return [];
-      }
+      try { if (!statSync(runsDir).isDirectory()) return []; } catch { return []; }
       const entries = readdirSync(runsDir);
       const sessions: SessionEntry[] = [];
       for (const entry of entries) {
         try {
           const raw = readFileSync(join(runsDir, entry, "run.json"), "utf-8");
           const run = JSON.parse(raw);
-          sessions.push({
-            id: run.id,
-            goal: run.goal ?? "",
-            status: run.status ?? "unknown",
-            createdAt: run.createdAt ?? "",
-          });
+          sessions.push({ id: run.id, goal: run.goal ?? "", status: run.status ?? "unknown", createdAt: run.createdAt ?? "" });
         } catch {}
       }
       return sessions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -333,49 +251,19 @@ export function startTui(options: TuiOptions): Promise<void> {
       for (const [pid, provider] of providers) {
         for (let i = 0; i < provider.models.length; i++) {
           if (found) {
-            setCurrentModel(options.cwd, { provider: pid, model: provider.models[i] });
-            chatArea.pushLine(`{green-fg}✓{/green-fg} Model: {cyan-fg}${pid}/${provider.models[i]}{/cyan-fg}`);
-            chatArea.pushLine("");
-            chatArea.setScrollPerc(100);
-            screen.render();
-            renderSidebar();
-            return;
+            setCurrentModel(options.cwd, { provider: pid, model: provider.models[i]! });
+            chatArea.pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, pid + "/" + provider.models[i]));
+            chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar(); return;
           }
-          if (pid === current.provider && provider.models[i] === current.model) {
-            found = true;
-          }
+          if (pid === current.provider && provider.models[i] === current.model) found = true;
         }
       }
       const first = providers[0];
       if (first) {
-        setCurrentModel(options.cwd, { provider: first[0], model: first[1].models[0] });
-        chatArea.pushLine(`{green-fg}✓{/green-fg} Model: {cyan-fg}${first[0]}/${first[1].models[0]}{/cyan-fg}`);
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        renderSidebar();
+        setCurrentModel(options.cwd, { provider: first[0], model: first[1].models[0]! });
+        chatArea.pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, first[0] + "/" + first[1].models[0]));
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar();
       }
-    }
-
-    function cycleAgent(): void {
-      const idx = AGENT_ROLES.findIndex((a) => a.id === currentAgentRole);
-      currentAgentRole = AGENT_ROLES[(idx + 1) % AGENT_ROLES.length]!.id;
-      chatArea.pushLine(`{green-fg}✓{/green-fg} Agent: {cyan-fg}${AGENT_ROLES.find((a) => a.id === currentAgentRole)?.name}{/cyan-fg}`);
-      chatArea.pushLine("");
-      chatArea.setScrollPerc(100);
-      screen.render();
-      renderSidebar();
-    }
-
-    function applyTheme(name: string): void {
-      if (!THEMES[name]) return;
-      currentTheme = name;
-      theme = THEMES[name];
-      chatArea.style = { bg: theme.bg, fg: theme.fg };
-      sidebar.style = { bg: theme.bg, fg: theme.dim };
-      inputLine.style = { bg: theme.bg, fg: theme.fg };
-      renderSidebar();
-      renderInput();
     }
 
     async function handleCommand(line: string): Promise<void> {
@@ -383,89 +271,56 @@ export function startTui(options: TuiOptions): Promise<void> {
       const rest = line.includes(" ") ? line.slice(line.indexOf(" ") + 1) : "";
 
       if (cmd?.name === "/exit") {
-        chatArea.pushLine("{grey-fg}Goodbye! 👋{/grey-fg}");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        await new Promise((r) => setTimeout(r, 300));
-        screen.destroy();
-        resolve();
-        return;
+        chatArea.pushLine(fg(T.textMuted, "Goodbye! 👋")); chatArea.setScrollPerc(100); screen.render();
+        await new Promise((r) => setTimeout(r, 300)); screen.destroy(); resolve(); return;
       }
 
       if (cmd?.name === "/help") {
-        chatArea.pushLine("{bold}Available Commands:{/bold}");
-        chatArea.pushLine("─".repeat(50));
+        chatArea.pushLine(bold(fg(T.text, "Commands:"))); chatArea.pushLine(hr());
         for (const c of SLASH_COMMANDS) {
-          const alias = c.aliases ? ` (${c.aliases.join(", ")})` : "";
-          chatArea.pushLine(
-            `  {white-fg}${c.name.padEnd(14)}{/white-fg} ${c.description}${alias}`,
-          );
+          const alias = c.aliases ? " " + fg(T.textMuted, "(" + c.aliases.join(", ") + ")") : "";
+          chatArea.pushLine("  " + fg(T.text, c.name.padEnd(14)) + " " + fg(T.textMuted, c.description) + alias);
         }
-        chatArea.pushLine("");
-        chatArea.pushLine("{bold}Keyboard Shortcuts:{/bold}");
-        chatArea.pushLine("─".repeat(50));
-        chatArea.pushLine("  {white-fg}Ctrl+N{/white-fg}       New session");
-        chatArea.pushLine("  {white-fg}Ctrl+P{/white-fg}       Command palette");
-        chatArea.pushLine("  {white-fg}Ctrl+L{/white-fg}       Session list");
-        chatArea.pushLine("  {white-fg}Ctrl+B{/white-fg}       Toggle sidebar");
-        chatArea.pushLine("  {white-fg}F2{/white-fg}            Cycle model");
-        chatArea.pushLine("  {white-fg}Shift+Enter{/white-fg}  Insert newline");
-        chatArea.pushLine("  {white-fg}Ctrl+A/E{/white-fg}     Home/End");
-        chatArea.pushLine("  {white-fg}Ctrl+U/K{/white-fg}     Delete to start/end");
-        chatArea.pushLine("  {white-fg}Ctrl+Left/Right{/white-fg} Word jump");
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        chatArea.pushLine(""); chatArea.pushLine(bold(fg(T.text, "Shortcuts:"))); chatArea.pushLine(hr());
+        const sc = [
+          ["Ctrl+N", "New session"], ["Ctrl+P", "Command palette"], ["Ctrl+L", "Session list"],
+          ["Ctrl+B", "Toggle sidebar"], ["F2", "Cycle model"], ["Shift+Enter", "Insert newline"],
+          ["Ctrl+A/E", "Home/End"], ["Ctrl+U/K", "Delete to start/end"], ["Ctrl+Left/Right", "Word jump"],
+        ];
+        for (const [k, v] of sc) chatArea.pushLine("  " + fg(T.text, k.padEnd(16)) + v);
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/new") {
         chatArea.setContent("");
         for (const l of buildLogoLines(screen.width as number)) chatArea.pushLine(l);
-        chatArea.pushLine("");
-        chatArea.pushLine("{white-fg}◈{/white-fg} New session started.");
-        chatArea.pushLine("");
-        messageCount = 0;
-        chatArea.setScrollPerc(100);
-        screen.render();
-        renderSidebar();
-        return;
+        chatArea.pushLine(""); chatArea.pushLine(fg(T.text, "◈") + " New session started.");
+        chatArea.pushLine(""); messageCount = 0; chatArea.setScrollPerc(100); screen.render(); renderSidebar(); return;
       }
 
       if (cmd?.name === "/sessions") {
         const sessions = loadSessions();
         if (sessions.length === 0) {
-          chatArea.pushLine("{#6c7086-fg}No sessions found. Run a goal to create one.{/#6c7086-fg}");
+          chatArea.pushLine(fg(T.textMuted, "No sessions found. Run a goal to create one."));
         } else {
-          chatArea.pushLine("{bold}Sessions:{/bold}");
-          chatArea.pushLine("─".repeat(50));
+          chatArea.pushLine(bold(fg(T.text, "Sessions:"))); chatArea.pushLine(hr());
           for (const s of sessions.slice(0, 20)) {
-            const statusIcon = s.status === "completed" ? "{green-fg}✓{/green-fg}" : s.status === "failed" ? "{red-fg}✗{/red-fg}" : "{yellow-fg}○{/yellow-fg}";
+            const si = s.status === "completed" ? fg(T.success, "✓") : s.status === "failed" ? fg(T.error, "✗") : fg(T.warning, "○");
             const date = s.createdAt ? new Date(s.createdAt).toLocaleString() : "";
-            chatArea.pushLine(`  ${statusIcon} {white-fg}${s.id.slice(0, 20)}{/white-fg} ${s.status}`);
-            chatArea.pushLine(`    {#6c7086-fg}${s.goal.slice(0, 60)}${s.goal.length > 60 ? "…" : ""}{/#6c7086-fg}`);
-            if (date) chatArea.pushLine(`    {#6c7086-fg}${date}{/#6c7086-fg}`);
+            chatArea.pushLine("  " + si + " " + fg(T.text, s.id.slice(0, 20)) + " " + fg(T.textMuted, s.status));
+            chatArea.pushLine("    " + fg(T.textMuted, s.goal.slice(0, 60) + (s.goal.length > 60 ? "…" : "")));
+            if (date) chatArea.pushLine("    " + fg(T.textMuted, date));
           }
-          chatArea.pushLine("");
-          chatArea.pushLine("{#6c7086-fg}Use: coagent status <run-id> / coagent resume <run-id>{/#6c7086-fg}");
+          chatArea.pushLine(""); chatArea.pushLine(fg(T.textMuted, "Use: coagent status <run-id> / coagent resume <run-id>"));
         }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/status") {
         const run = await orchestrator.status();
-        if (!run) {
-          chatArea.pushLine("{#6c7086-fg}📭 No runs yet.{/#6c7086-fg}");
-          chatArea.pushLine("");
-        } else {
-          printRun(run);
-        }
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        if (!run) { chatArea.pushLine(fg(T.textMuted, "📭 No runs yet.")); chatArea.pushLine(""); }
+        else printRun(run);
+        chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/model") {
@@ -473,36 +328,28 @@ export function startTui(options: TuiOptions): Promise<void> {
           const resolved = resolveModelInput(rest);
           if (resolved) {
             const configPath = setCurrentModel(options.cwd, resolved);
-            chatArea.pushLine(`{green-fg}✓{/green-fg} Model set to: {white-fg}${formatModelString(resolved)}{/white-fg}`);
-            chatArea.pushLine(`{#6c7086-fg}  Saved to ${configPath}{/#6c7086-fg}`);
+            chatArea.pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, formatModelString(resolved)));
+            chatArea.pushLine(fg(T.textMuted, "  Saved to " + configPath));
           } else {
-            chatArea.pushLine(`{red-fg}✗{/red-fg} Unknown model: ${rest}`);
-            chatArea.pushLine("{#6c7086-fg}  Usage: /model <provider/model>{/#6c7086-fg}");
-            chatArea.pushLine("{#6c7086-fg}  Example: /model anthropic/claude-sonnet-4-20250514{/#6c7086-fg}");
-            chatArea.pushLine("{#6c7086-fg}  Type /model with no args to see available providers.{/#6c7086-fg}");
+            chatArea.pushLine(fg(T.error, "✗") + " Unknown model: " + rest);
+            chatArea.pushLine(fg(T.textMuted, "  Usage: /model <provider/model>"));
+            chatArea.pushLine(fg(T.textMuted, "  Example: /model anthropic/claude-sonnet-4-20250514"));
+            chatArea.pushLine(fg(T.textMuted, "  Type /model with no args to see available providers."));
           }
         } else {
           const current = getCurrentModel(options.cwd);
-          chatArea.pushLine(`{white-fg}◈{/white-fg} Current model: {cyan-fg}${formatModelString(current)}{/cyan-fg}`);
-          chatArea.pushLine("");
-          chatArea.pushLine("{white-fg}Available providers:{/white-fg}");
+          chatArea.pushLine(fg(T.text, "◈") + " Current: " + fg(T.primary, formatModelString(current)));
+          chatArea.pushLine(""); chatArea.pushLine(fg(T.text, "Providers:"));
           for (const [id, provider] of Object.entries(getKnownProviders())) {
-            chatArea.pushLine(`  {cyan-fg}${id}{/cyan-fg} (${provider.name})`);
+            chatArea.pushLine("  " + fg(T.secondary, id) + " " + fg(T.textMuted, "(" + provider.name + ")"));
             for (const model of provider.models) {
-              const marker = id === current.provider && model === current.model ? " {green-fg}← current{/green-fg}" : "";
-              chatArea.pushLine(`    {#6c7086-fg}${id}/${model}{/#6c7086-fg}${marker}`);
+              const marker = id === current.provider && model === current.model ? " " + fg(T.success, "← current") : "";
+              chatArea.pushLine("    " + fg(T.textMuted, id + "/" + model) + marker);
             }
           }
-          chatArea.pushLine("");
-          chatArea.pushLine("{#6c7086-fg}Usage: /model <provider/model>{/#6c7086-fg}");
-          chatArea.pushLine("{#6c7086-fg}Example: /model anthropic/claude-sonnet-4-20250514{/#6c7086-fg}");
-          chatArea.pushLine("{#6c7086-fg}Shortcut: F2 to cycle through models{/#6c7086-fg}");
+          chatArea.pushLine(""); chatArea.pushLine(fg(T.textMuted, "Usage: /model <provider/model>  ·  F2 to cycle"));
         }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        renderSidebar();
-        return;
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar(); return;
       }
 
       if (cmd?.name === "/agents") {
@@ -510,319 +357,154 @@ export function startTui(options: TuiOptions): Promise<void> {
           const found = AGENT_ROLES.find((a) => a.id === rest.toLowerCase() || a.name.toLowerCase() === rest.toLowerCase());
           if (found) {
             currentAgentRole = found.id;
-            chatArea.pushLine(`{green-fg}✓{/green-fg} Agent set to: {cyan-fg}${found.name}{/cyan-fg} — ${found.desc}`);
-          } else {
-            chatArea.pushLine(`{red-fg}✗{/red-fg} Unknown agent: ${rest}`);
-          }
+            chatArea.pushLine(fg(T.success, "✓") + " Agent: " + fg(found.color, found.name) + " — " + found.desc);
+          } else { chatArea.pushLine(fg(T.error, "✗") + " Unknown agent: " + rest); }
         } else {
-          chatArea.pushLine("{bold}Available Agent Roles:{/bold}");
-          chatArea.pushLine("─".repeat(50));
+          chatArea.pushLine(bold(fg(T.text, "Agents:")));
           for (const a of AGENT_ROLES) {
-            const marker = a.id === currentAgentRole ? " {green-fg}← current{/green-fg}" : "";
-            chatArea.pushLine(`  {cyan-fg}${a.id.padEnd(14)}{/cyan-fg} ${a.name} — ${a.desc}${marker}`);
+            const marker = a.id === currentAgentRole ? " " + fg(T.success, "← current") : "";
+            chatArea.pushLine("  " + fg(a.color, a.id.padEnd(14)) + " " + fg(T.text, a.name) + " " + fg(T.textMuted, "— " + a.desc) + marker);
           }
-          chatArea.pushLine("");
-          chatArea.pushLine("{#6c7086-fg}Usage: /agents <role>{/#6c7086-fg}");
-          chatArea.pushLine("{#6c7086-fg}Example: /agents implementer{/#6c7086-fg}");
+          chatArea.pushLine(""); chatArea.pushLine(fg(T.textMuted, "Usage: /agents <role>"));
         }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        renderSidebar();
-        return;
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar(); return;
       }
 
       if (cmd?.name === "/theme") {
-        if (rest && THEMES[rest.toLowerCase()]) {
-          applyTheme(rest.toLowerCase());
-          chatArea.pushLine(`{green-fg}✓{/green-fg} Theme set to: {cyan-fg}${THEMES[rest.toLowerCase()]!.name}{/cyan-fg}`);
-        } else {
-          chatArea.pushLine("{bold}Available Themes:{/bold}");
-          for (const [id, t] of Object.entries(THEMES)) {
-            const marker = id === currentTheme ? " {green-fg}← current{/green-fg}" : "";
-            chatArea.pushLine(`  {cyan-fg}${id.padEnd(14)}{/cyan-fg} ${t.name}${marker}`);
-          }
-          chatArea.pushLine("");
-          chatArea.pushLine("{#6c7086-fg}Usage: /theme <name>{/#6c7086-fg}");
-        }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        chatArea.pushLine(fg(T.textMuted, "Theme is fixed to OpenCode dark.")); chatArea.pushLine("");
+        chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/compact") {
-        const lines = chatArea.getLines();
-        const total = lines.length;
+        const total = chatArea.getLines().length;
         if (total > 50) {
           chatArea.setContent("");
-          chatArea.pushLine(`{#6c7086-fg}◈ Compacted ${total} lines → kept last 20 messages{/#6c7086-fg}`);
+          chatArea.pushLine(fg(T.textMuted, "◈ Compacted " + total + " lines → kept last 20 messages"));
           chatArea.pushLine("");
-        } else {
-          chatArea.pushLine("{white-fg}◈{/white-fg} Conversation is already compact.");
-        }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        } else { chatArea.pushLine(fg(T.text, "◈") + " Already compact."); chatArea.pushLine(""); }
+        chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/diff") {
         const run = await orchestrator.status();
-        if (!run) {
-          chatArea.pushLine("{#6c7086-fg}No runs yet. Run a goal first.{/#6c7086-fg}");
-        } else {
+        if (!run) { chatArea.pushLine(fg(T.textMuted, "No runs yet.")); }
+        else {
           const changedFiles = new Set<string>();
-          for (const ar of run.agentRuns) {
-            for (const f of ar.diffFiles) changedFiles.add(f);
-          }
-          if (changedFiles.size === 0) {
-            chatArea.pushLine("{#6c7086-fg}No file changes in the last run.{/#6c7086-fg}");
-          } else {
-            chatArea.pushLine(`{bold}Changed Files ({changedFiles.size}):{/bold}`);
-            chatArea.pushLine("─".repeat(50));
-            for (const f of [...changedFiles].sort()) {
-              chatArea.pushLine(`  {cyan-fg}${f}{/cyan-fg}`);
-            }
+          for (const ar of run.agentRuns) for (const f of ar.diffFiles) changedFiles.add(f);
+          if (changedFiles.size === 0) { chatArea.pushLine(fg(T.textMuted, "No file changes.")); }
+          else {
+            chatArea.pushLine(bold(fg(T.text, "Changed (" + changedFiles.size + "):")));
+            for (const f of [...changedFiles].sort()) chatArea.pushLine("  " + fg(T.diffAdded, f));
           }
         }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/config") {
         const configPath = findConfigFile(options.cwd);
         if (configPath) {
-          chatArea.pushLine(`{white-fg}◈{/white-fg} Config file: {cyan-fg}${configPath}{/cyan-fg}`);
+          chatArea.pushLine(fg(T.text, "◈") + " Config: " + fg(T.secondary, configPath));
           try {
             const raw = readFileSync(configPath, "utf-8");
-            chatArea.pushLine("─".repeat(50));
-            for (const line of raw.split("\n")) {
-              chatArea.pushLine(`  {#6c7086-fg}${line}{/#6c7086-fg}`);
-            }
-          } catch {
-            chatArea.pushLine("{red-fg}✗{/red-fg} Could not read config file.");
-          }
-        } else {
-          chatArea.pushLine("{#6c7086-fg}No config file found. Use /model to create one.{/#6c7086-fg}");
-        }
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+            chatArea.pushLine(hr());
+            for (const ln of raw.split("\n")) chatArea.pushLine("  " + fg(T.textMuted, ln));
+          } catch { chatArea.pushLine(fg(T.error, "✗") + " Could not read config."); }
+        } else { chatArea.pushLine(fg(T.textMuted, "No config file. Use /model to create one.")); }
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/plan") {
-        if (!rest) {
-          chatArea.pushLine("{red-fg}✗{/red-fg} /plan requires a goal. Usage: /plan <goal>");
-          chatArea.pushLine("");
-          chatArea.setScrollPerc(100);
-          screen.render();
-          return;
-        }
-        chatArea.pushLine(`{white-fg}◈{/white-fg} Planning: ${rest}`);
-        chatArea.pushLine("─".repeat(50));
-        chatArea.setScrollPerc(100);
-        screen.render();
-        try {
-          const run = await orchestrator.plan(rest);
-          printRun(run);
-        } catch (error) {
-          chatArea.pushLine(`{red-fg}✗ Error: ${error instanceof Error ? error.message : String(error)}{/red-fg}`);
-        }
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        if (!rest) { chatArea.pushLine(fg(T.error, "✗") + " /plan requires a goal. Usage: /plan <goal>"); chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return; }
+        chatArea.pushLine(fg(T.text, "◈") + " Planning: " + rest); chatArea.pushLine(hr());
+        chatArea.setScrollPerc(100); screen.render();
+        try { const run = await orchestrator.plan(rest); printRun(run); }
+        catch (error) { chatArea.pushLine(fg(T.error, "✗ Error: " + (error instanceof Error ? error.message : String(error)))); }
+        chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       if (cmd?.name === "/run") {
-        if (!rest) {
-          chatArea.pushLine("{red-fg}✗{/red-fg} /run requires a goal. Usage: /run <goal>");
-          chatArea.pushLine("");
-          chatArea.setScrollPerc(100);
-          screen.render();
-          return;
-        }
-        await runGoal(rest);
-        return;
+        if (!rest) { chatArea.pushLine(fg(T.error, "✗") + " /run requires a goal. Usage: /run <goal>"); chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return; }
+        await runGoal(rest); return;
       }
 
       if (line.startsWith("/")) {
-        chatArea.pushLine(
-          `{red-fg}✗{/red-fg} Unknown command: ${line}. Type {white-fg}/help{/white-fg} for available commands.`,
-        );
-        chatArea.pushLine("");
-        chatArea.setScrollPerc(100);
-        screen.render();
-        return;
+        chatArea.pushLine(fg(T.error, "✗") + " Unknown command: " + line + ". Type " + fg(T.text, "/help") + " for commands.");
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
       }
 
       await runGoal(line);
     }
 
     async function runGoal(goal: string): Promise<void> {
-      chatArea.pushLine(`{white-fg}◈{/white-fg} Goal: ${goal}`);
-      chatArea.pushLine(
-        "{grey-fg}🎭 Roles: planner → explorer → implementer → reviewer + tester → integrator{/grey-fg}",
-      );
-      chatArea.pushLine("─".repeat(50));
-      chatArea.setScrollPerc(100);
-      screen.render();
-
+      chatArea.pushLine(fg(T.text, "◈") + " Goal: " + goal);
+      chatArea.pushLine(fg(T.textMuted, "🎭 planner → explorer → implementer → reviewer + tester → integrator"));
+      chatArea.pushLine(hr()); chatArea.setScrollPerc(100); screen.render();
       try {
         const run = await orchestrator.run(goal);
-        chatArea.pushLine("");
-        printRun(run);
+        chatArea.pushLine(""); printRun(run);
       } catch (error) {
-        chatArea.pushLine(
-          `{red-fg}✗ Error: ${error instanceof Error ? error.message : String(error)}{/red-fg}`,
-        );
+        chatArea.pushLine(fg(T.error, "✗ Error: " + (error instanceof Error ? error.message : String(error))));
       }
-      chatArea.pushLine("");
-      chatArea.setScrollPerc(100);
-      screen.render();
+      chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render();
     }
 
     function printRun(run: import("../core/types.js").CoAgentRun): void {
-      const badge =
-        run.status === "completed"
-          ? "{green-fg}✓{/green-fg}"
-          : run.status === "failed"
-            ? "{red-fg}✗{/red-fg}"
-            : run.status === "blocked"
-              ? "{yellow-fg}⊘{/yellow-fg}"
-              : "·";
-      chatArea.pushLine(`${badge} Finished: ${run.id.slice(0, 12)}…`);
-      chatArea.pushLine(`  Goal:   ${run.goal}`);
-      chatArea.pushLine(`  Status: ${run.status}`);
-      if (run.mergePlan) {
-        chatArea.pushLine(
-          `  Merge:  ${run.mergePlan.status}${run.mergePlan.conflicts.length > 0 ? ` (${run.mergePlan.conflicts.length} conflicts)` : ""}`,
-        );
-      }
-      if (run.riskReport) {
-        chatArea.pushLine(
-          `  Risk:   ${run.riskReport.status} (${run.riskReport.risks?.length ?? 0} risks)`,
-        );
-      }
+      const badge = run.status === "completed" ? fg(T.success, "✓")
+        : run.status === "failed" ? fg(T.error, "✗")
+        : run.status === "blocked" ? fg(T.warning, "⊘") : "·";
+      chatArea.pushLine(badge + " Finished: " + run.id.slice(0, 12) + "…");
+      chatArea.pushLine("  Goal:   " + run.goal);
+      chatArea.pushLine("  Status: " + fg(T.textMuted, run.status));
+      if (run.mergePlan) chatArea.pushLine("  Merge:  " + fg(T.textMuted, run.mergePlan.status + (run.mergePlan.conflicts.length > 0 ? " (" + run.mergePlan.conflicts.length + " conflicts)" : "")));
+      if (run.riskReport) chatArea.pushLine("  Risk:   " + fg(T.textMuted, run.riskReport.status + " (" + (run.riskReport.risks?.length ?? 0) + " risks)"));
       chatArea.pushLine("  Tasks:");
       for (const task of run.taskGraph.tasks) {
-        const tBadge =
-          task.status === "completed"
-            ? "{green-fg}✓{/green-fg}"
-            : task.status === "failed"
-              ? "{red-fg}✗{/red-fg}"
-              : task.status === "running"
-                ? "{white-fg}▶{/white-fg}"
-                : "·";
-        chatArea.pushLine(
-          `    ${tBadge} ${task.role.padEnd(11)} ${task.title}`,
-        );
+        const agent = AGENT_ROLES.find((a) => a.id === task.role);
+        const tBadge = task.status === "completed" ? fg(T.success, "✓")
+          : task.status === "failed" ? fg(T.error, "✗")
+          : task.status === "running" ? fg(agent?.color ?? T.text, "▶") : "·";
+        chatArea.pushLine("    " + tBadge + " " + fg(agent?.color ?? T.textMuted, task.role.padEnd(11)) + " " + task.title);
       }
     }
+
+    // ── Key handler ─────────────────────────────────────────
 
     screen.program.on("keypress", (ch: string, key: any) => {
       if (!key) return;
 
-      if (key.full === "C-c") {
-        screen.destroy();
-        resolve();
-        return;
-      }
-
+      if (key.full === "C-c") { screen.destroy(); resolve(); return; }
       if (key.full === "escape") {
-        if (showingAutoComplete) {
-          hideAutoComplete();
-          renderInput();
-          return;
-        }
-        screen.destroy();
-        resolve();
-        return;
+        if (showingAutoComplete) { hideAutoComplete(); renderInput(); return; }
+        screen.destroy(); resolve(); return;
       }
 
-      if (key.full === "C-n") {
-        handleCommand("/new");
-        return;
-      }
-
-      if (key.full === "C-p") {
-        inputBuf = "/";
-        cursorPos = 1;
-        updateAutoComplete();
-        renderInput();
-        return;
-      }
-
-      if (key.full === "C-l") {
-        handleCommand("/sessions");
-        return;
-      }
-
-      if (key.full === "C-b") {
-        sidebarVisible = !sidebarVisible;
-        renderSidebar();
-        screen.render();
-        renderInput();
-        return;
-      }
-
-      if (key.name === "f2") {
-        cycleModel();
-        return;
-      }
+      if (key.full === "C-n") { handleCommand("/new"); return; }
+      if (key.full === "C-p") { inputBuf = "/"; cursorPos = 1; updateAutoComplete(); renderInput(); return; }
+      if (key.full === "C-l") { handleCommand("/sessions"); return; }
+      if (key.full === "C-b") { sidebarVisible = !sidebarVisible; renderSidebar(); renderInput(); return; }
+      if (key.name === "f2") { cycleModel(); return; }
 
       if (showingAutoComplete) {
-        if (key.name === "up") {
-          selectedCmdIdx = Math.max(0, selectedCmdIdx - 1);
-          renderAutoComplete();
-          return;
-        }
-        if (key.name === "down") {
-          selectedCmdIdx = Math.min(matchedCmds.length - 1, selectedCmdIdx + 1);
-          renderAutoComplete();
-          return;
-        }
-        if (key.name === "return" || key.name === "tab") {
-          applyAutoComplete();
-          return;
-        }
-        if (key.name === "escape") {
-          hideAutoComplete();
-          renderInput();
-          return;
-        }
+        if (key.name === "up") { selectedCmdIdx = Math.max(0, selectedCmdIdx - 1); renderAutoComplete(); return; }
+        if (key.name === "down") { selectedCmdIdx = Math.min(matchedCmds.length - 1, selectedCmdIdx + 1); renderAutoComplete(); return; }
+        if (key.name === "return" || key.name === "tab") { applyAutoComplete(); return; }
+        if (key.full === "escape") { hideAutoComplete(); renderInput(); return; }
       }
 
       if (key.name === "tab" && !showingAutoComplete) {
-        if (inputBuf.startsWith("/") && matchedCmds.length > 0) {
-          applyAutoComplete();
-        }
-        return;
+        if (inputBuf.startsWith("/") && matchedCmds.length > 0) applyAutoComplete(); return;
       }
 
       if (key.name === "return" || key.name === "enter") {
-        if (key.shift) {
-          inputBuf = inputBuf.slice(0, cursorPos) + "\n" + inputBuf.slice(cursorPos);
-          cursorPos++;
-          renderInput();
-          return;
-        }
+        if (key.shift) { inputBuf = inputBuf.slice(0, cursorPos) + "\n" + inputBuf.slice(cursorPos); cursorPos++; renderInput(); return; }
         if (inputBuf.startsWith("/")) {
           const matches = matchSlashCommands(inputBuf.trim());
           const exact = resolveCommand(inputBuf.trim());
           if (!exact && matches.length > 0) {
-            selectedCmdIdx = 0;
-            matchedCmds = matches;
-            showingAutoComplete = true;
-            applyAutoComplete();
-            return;
+            selectedCmdIdx = 0; matchedCmds = matches; showingAutoComplete = true; applyAutoComplete(); return;
           }
         }
-        submitInput();
-        return;
+        submitInput(); return;
       }
 
       if (key.name === "backspace") {
@@ -830,135 +512,57 @@ export function startTui(options: TuiOptions): Promise<void> {
           const before = inputBuf.slice(0, cursorPos);
           const wordEnd = before.search(/\S\s*$/);
           const cutTo = wordEnd >= 0 ? wordEnd + 1 : 0;
-          inputBuf = inputBuf.slice(0, cutTo) + inputBuf.slice(cursorPos);
-          cursorPos = cutTo;
-        } else if (cursorPos > 0) {
-          inputBuf = inputBuf.slice(0, cursorPos - 1) + inputBuf.slice(cursorPos);
-          cursorPos--;
-        }
-        updateAutoComplete();
-        renderInput();
-        return;
+          inputBuf = inputBuf.slice(0, cutTo) + inputBuf.slice(cursorPos); cursorPos = cutTo;
+        } else if (cursorPos > 0) { inputBuf = inputBuf.slice(0, cursorPos - 1) + inputBuf.slice(cursorPos); cursorPos--; }
+        updateAutoComplete(); renderInput(); return;
       }
 
       if (key.name === "delete") {
-        if (cursorPos < inputBuf.length) {
-          inputBuf = inputBuf.slice(0, cursorPos) + inputBuf.slice(cursorPos + 1);
-          updateAutoComplete();
-          renderInput();
-        }
+        if (cursorPos < inputBuf.length) { inputBuf = inputBuf.slice(0, cursorPos) + inputBuf.slice(cursorPos + 1); updateAutoComplete(); renderInput(); }
         return;
       }
 
-      if (key.full === "C-u") {
-        inputBuf = inputBuf.slice(cursorPos);
-        cursorPos = 0;
-        updateAutoComplete();
-        renderInput();
-        return;
-      }
-
-      if (key.full === "C-k") {
-        inputBuf = inputBuf.slice(0, cursorPos);
-        updateAutoComplete();
-        renderInput();
-        return;
-      }
+      if (key.full === "C-u") { inputBuf = inputBuf.slice(cursorPos); cursorPos = 0; updateAutoComplete(); renderInput(); return; }
+      if (key.full === "C-k") { inputBuf = inputBuf.slice(0, cursorPos); updateAutoComplete(); renderInput(); return; }
 
       if (key.name === "left") {
-        if (key.ctrl) {
-          const before = inputBuf.slice(0, cursorPos).replace(/\s+$/, "");
-          const match = before.match(/\S*$/);
-          cursorPos = match ? match.index ?? cursorPos : cursorPos;
-        } else if (cursorPos > 0) {
-          cursorPos--;
-        }
-        renderInput();
-        return;
+        if (key.ctrl) { const before = inputBuf.slice(0, cursorPos).replace(/\s+$/, ""); const m = before.match(/\S*$/); cursorPos = m ? m.index ?? cursorPos : cursorPos; }
+        else if (cursorPos > 0) cursorPos--;
+        renderInput(); return;
       }
-
       if (key.name === "right") {
-        if (key.ctrl) {
-          const after = inputBuf.slice(cursorPos);
-          const match = after.match(/^\S*\s*/);
-          cursorPos += match ? match[0].length : 0;
-        } else if (cursorPos < inputBuf.length) {
-          cursorPos++;
-        }
-        renderInput();
-        return;
+        if (key.ctrl) { const after = inputBuf.slice(cursorPos); const m = after.match(/^\S*\s*/); cursorPos += m ? m[0].length : 0; }
+        else if (cursorPos < inputBuf.length) cursorPos++;
+        renderInput(); return;
       }
 
-      if (key.name === "home" || key.full === "C-a") {
-        cursorPos = 0;
-        renderInput();
-        return;
-      }
-
-      if (key.name === "end" || key.full === "C-e") {
-        cursorPos = inputBuf.length;
-        renderInput();
-        return;
-      }
+      if (key.name === "home" || key.full === "C-a") { cursorPos = 0; renderInput(); return; }
+      if (key.name === "end" || key.full === "C-e") { cursorPos = inputBuf.length; renderInput(); return; }
 
       if (key.name === "up" && !showingAutoComplete) {
-        if (chatHistory.length > 0 && historyIdx > 0) {
-          historyIdx--;
-          inputBuf = chatHistory[historyIdx];
-          cursorPos = inputBuf.length;
-          updateAutoComplete();
-          renderInput();
-        }
-        return;
+        if (chatHistory.length > 0 && historyIdx > 0) { historyIdx--; inputBuf = chatHistory[historyIdx]; cursorPos = inputBuf.length; updateAutoComplete(); renderInput(); } return;
       }
-
       if (key.name === "down" && !showingAutoComplete) {
-        if (historyIdx < chatHistory.length - 1) {
-          historyIdx++;
-          inputBuf = chatHistory[historyIdx];
-        } else {
-          historyIdx = chatHistory.length;
-          inputBuf = "";
-        }
-        cursorPos = inputBuf.length;
-        updateAutoComplete();
-        renderInput();
-        return;
+        if (historyIdx < chatHistory.length - 1) { historyIdx++; inputBuf = chatHistory[historyIdx]; }
+        else { historyIdx = chatHistory.length; inputBuf = ""; }
+        cursorPos = inputBuf.length; updateAutoComplete(); renderInput(); return;
       }
 
-      if (key.name === "pageup") {
-        chatArea.scroll(-20);
-        screen.render();
-        return;
-      }
-
-      if (key.name === "pagedown") {
-        chatArea.scroll(20);
-        screen.render();
-        return;
-      }
+      if (key.name === "pageup") { chatArea.scroll(-20); screen.render(); return; }
+      if (key.name === "pagedown") { chatArea.scroll(20); screen.render(); return; }
 
       if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
-        inputBuf =
-          inputBuf.slice(0, cursorPos) + ch + inputBuf.slice(cursorPos);
-        cursorPos++;
-        updateAutoComplete();
-        renderInput();
+        inputBuf = inputBuf.slice(0, cursorPos) + ch + inputBuf.slice(cursorPos);
+        cursorPos++; updateAutoComplete(); renderInput();
       }
     });
 
     screen.program.hideCursor();
-    screen.program.cup(screen.height as number - 1, 2);
+    screen.program.cup(screen.height as number - 3, 4);
     screen.program.showCursor();
 
-    chatArea.on("click", () => {
-      renderInput();
-    });
-
-    screen.on("resize", () => {
-      renderInput();
-      renderSidebar();
-    });
+    chatArea.on("click", () => { renderInput(); });
+    screen.on("resize", () => { renderInput(); renderSidebar(); });
 
     renderSidebar();
     renderInput();
