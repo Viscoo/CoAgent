@@ -209,8 +209,7 @@ export function startTui(options: TuiOptions): Promise<void> {
 
     function renderInput(): void {
       const prompt = "{white-fg}❯{/white-fg} ";
-      const ver = `{${theme.dim}-fg}CoAgent v${VERSION}{/${theme.dim}-fg}`;
-      inputLine.setContent(`${prompt}${inputBuf}${ver}`);
+      inputLine.setContent(`${prompt}${inputBuf}`);
       screen.render();
       const promptDisplayWidth = 2;
       const cursorCol = promptDisplayWidth + displayWidth(inputBuf.slice(0, cursorPos));
