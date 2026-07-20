@@ -1,4 +1,4 @@
-import type { OpenCodeAdapter } from "../adapters/opencode-adapter.js";
+import type { CoAgentAdapter } from "../adapters/adapter.js";
 import { randomBytes } from "node:crypto";
 
 export const AGENT_ROLES = [
@@ -159,12 +159,13 @@ export interface OrchestratorOptions {
   cwd: string;
   maxConcurrency: number;
   dryRun: boolean;
+  backend?: "opencode" | "claude" | "mock";
   startOpenCodeServer?: boolean;
   openCodeBaseUrl?: string;
   maxRetries?: number;
   retryDelayMs?: number;
   onProgress?: (event: ProgressEvent) => void;
-  adapter?: OpenCodeAdapter;
+  adapter?: CoAgentAdapter;
 }
 
 export interface ProgressEvent {

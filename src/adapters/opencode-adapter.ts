@@ -1,17 +1,10 @@
 import { type AgentSpec } from "../core/agent-registry.js";
 import { type TaskNode } from "../core/types.js";
+import { type CoAgentAdapter, type CoAgentSession, type CoAgentPromptResult } from "./adapter.js";
 
-export interface OpenCodeSession {
-  id: string;
-}
+export interface OpenCodeSession extends CoAgentSession {}
 
-export interface OpenCodePromptResult {
-  sessionId: string;
-  messageId?: string;
-  summary?: string;
-  diffFiles: string[];
-  raw: unknown;
-}
+export interface OpenCodePromptResult extends CoAgentPromptResult {}
 
 export interface OpenCodeAdapterOptions {
   cwd: string;
@@ -19,7 +12,7 @@ export interface OpenCodeAdapterOptions {
   startServer?: boolean;
 }
 
-export interface OpenCodeAdapter {
+export interface OpenCodeAdapter extends CoAgentAdapter {
   ensureReady(): Promise<void>;
   createParentSession(goal: string): Promise<OpenCodeSession>;
   createChildSession(parentSessionId: string, task: TaskNode, agent: AgentSpec): Promise<OpenCodeSession>;
@@ -28,9 +21,8 @@ export interface OpenCodeAdapter {
   close(): Promise<void>;
 }
 
-// --- Real OpenCode SDK Adapter ---
-
 export class SdkOpenCodeAdapter implements OpenCodeAdapter {
+  readonly backend = "opencode";
   private client: import("../opencode-sdk/client.js").OpencodeClient | null = null;
   private serverClose: (() => void) | null = null;
 

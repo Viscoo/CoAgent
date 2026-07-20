@@ -2,19 +2,10 @@ import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type AgentSpec } from "../core/agent-registry.js";
 import { type TaskNode } from "../core/types.js";
-import {
-  type OpenCodeAdapter,
-  type OpenCodePromptResult,
-  type OpenCodeSession,
-} from "./opencode-adapter.js";
+import { type CoAgentAdapter, type CoAgentPromptResult, type CoAgentSession } from "./adapter.js";
 
-/**
- * Simulated adapter that runs agent tasks in-memory with fake results.
- *
- * No OpenCode server or SDK required — ideal for demo, dev, and CI.
- * Use --mock (default) to test the full orchestration flow end-to-end.
- */
-export class MockAdapter implements OpenCodeAdapter {
+export class MockAdapter implements CoAgentAdapter {
+  readonly backend = "mock";
   private sessions = new Map<string, { parentId?: string; role?: string; taskTitle?: string }>();
   private closed = false;
   private failureRate = 0;
@@ -27,7 +18,7 @@ export class MockAdapter implements OpenCodeAdapter {
     this.closed = false;
   }
 
-  async createParentSession(goal: string): Promise<OpenCodeSession> {
+  async createParentSession(goal: string): Promise<CoAgentSession> {
     const id = `mock-parent-${randomBytes(4).toString("hex")}`;
     this.sessions.set(id, { taskTitle: goal });
     return { id };
@@ -37,13 +28,13 @@ export class MockAdapter implements OpenCodeAdapter {
     parentSessionId: string,
     task: TaskNode,
     _agent: AgentSpec,
-  ): Promise<OpenCodeSession> {
+  ): Promise<CoAgentSession> {
     const id = `mock-${task.role}-${randomBytes(4).toString("hex")}`;
     this.sessions.set(id, { parentId: parentSessionId, role: task.role, taskTitle: task.title });
     return { id };
   }
 
-  async prompt(sessionId: string, _prompt: string, _asyncMode?: boolean): Promise<OpenCodePromptResult> {
+  async prompt(sessionId: string, _prompt: string, _asyncMode?: boolean): Promise<CoAgentPromptResult> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Unknown mock session: ${sessionId}`);
 

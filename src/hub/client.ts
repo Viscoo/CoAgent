@@ -14,6 +14,7 @@ export interface AgentOptions {
   name?: string;
   projectDir?: string;
   role?: string;
+  backend?: string;
   goal?: string;
   capabilities?: string[];
   autoReconnect?: boolean;
@@ -53,6 +54,7 @@ export class AgentClient extends EventEmitter {
       name: options.name ?? generateFruitName(),
       projectDir: options.projectDir ?? process.cwd(),
       role: options.role ?? "general",
+      backend: options.backend ?? "opencode",
       goal: options.goal ?? "",
       capabilities: options.capabilities ?? [],
       autoReconnect: options.autoReconnect ?? true,
@@ -90,6 +92,7 @@ export class AgentClient extends EventEmitter {
             name: this.options.name,
             projectDir: this.options.projectDir,
             role: this.options.role,
+            backend: this.options.backend,
             goal: this.options.goal,
             capabilities: this.options.capabilities,
           }));

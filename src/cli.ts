@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { cwd as processCwd, exit, stdout } from "node:process";
 import { SdkOpenCodeAdapter } from "./adapters/opencode-adapter.js";
+import { ClaudeCodeAdapter } from "./adapters/claude-adapter.js";
 import { MockAdapter } from "./adapters/mock-adapter.js";
+import { type CoAgentAdapter } from "./adapters/adapter.js";
 import { startChat } from "./cli/chat.js";
 import { startTui } from "./tui/index.js";
 import { Orchestrator } from "./core/orchestrator.js";
@@ -394,6 +396,7 @@ Options:
   --opencode-url <url>     OpenCode server base URL.
   --mock                   Force mock adapter (default: auto when no URL given).
   --mock-failure-rate <n>  Mock adapter failure probability 0-1. Defaults to 0.
+  --backend <type>         AI backend: opencode, claude, mock (default: mock).
   --port <port>            Hub server port (default: 4876)
   --host <host>            Hub server host (default: 127.0.0.1)
   --hub <url>              Hub URL for ps command (default: http://127.0.0.1:4876)
@@ -419,14 +422,19 @@ async function findOpencodeBinary(): Promise<string | undefined> {
 async function startInteractiveSession(parsed: ParsedArgs, cwd: string): Promise<void> {
   await startTui({
     cwd,
+    backend: (stringFlag(parsed, "backend") as "opencode" | "claude" | "mock") ?? "mock",
     failureRate: Number(stringFlag(parsed, "mock-failure-rate") ?? "0"),
     concurrency: Number(stringFlag(parsed, "concurrency") ?? "2"),
     retries: Number(stringFlag(parsed, "retries") ?? "2"),
   });
 }
 
-function buildAdapter(parsed: ParsedArgs, cwd: string): import("./adapters/opencode-adapter.js").OpenCodeAdapter {
-  const useReal = stringFlag(parsed, "opencode-url") || booleanFlag(parsed, "start-server");
+function buildAdapter(parsed: ParsedArgs, cwd: string): CoAgentAdapter {
+  const backend = stringFlag(parsed, "backend") ?? "mock";
+  if (backend === "claude") {
+    return new ClaudeCodeAdapter({ cwd, model: stringFlag(parsed, "model") });
+  }
+  const useReal = backend === "opencode" || stringFlag(parsed, "opencode-url") || booleanFlag(parsed, "start-server");
   return useReal
     ? new SdkOpenCodeAdapter({
         cwd,

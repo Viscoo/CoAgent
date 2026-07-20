@@ -39,6 +39,7 @@ const SIDEBAR_WIDTH = 32;
 
 export interface TuiOptions {
   cwd: string; failureRate?: number; concurrency?: number; retries?: number;
+  backend?: "opencode" | "claude" | "mock";
 }
 
 interface SessionEntry { id: string; goal: string; status: string; createdAt: string; }
@@ -164,8 +165,10 @@ export function startTui(options: TuiOptions): Promise<void> {
       const model = getCurrentModel(options.cwd);
       const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
       const shortCwd = options.cwd.split(/[/\\]/).slice(-2).join("/");
+      const backendLabel = options.backend ?? "mock";
       const lines = [
         bold(fg(T.text, "CoAgent")), fg(T.textMuted, "v" + VERSION), "",
+        fg(T.textMuted, "─── Backend ───"), fg(T.secondary, backendLabel), "",
         fg(T.textMuted, "─── Model ───"), fg(agent?.color ?? T.primary, formatModelString(model)), "",
         fg(T.textMuted, "─── Agent ───"), fg(agent?.color ?? T.primary, agent?.name ?? currentAgentRole),
         fg(T.textMuted, agent?.desc ?? ""), "",

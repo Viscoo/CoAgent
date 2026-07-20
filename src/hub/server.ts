@@ -174,6 +174,7 @@ export class Hub {
       name: payload.name || `agent-${agentId.slice(-6)}`,
       projectDir: payload.projectDir || process.cwd(),
       role: payload.role || "general",
+      backend: payload.backend || "opencode",
       status: "online",
       currentTask: "",
       goal: payload.goal || "",

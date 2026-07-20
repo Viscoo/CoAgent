@@ -13,7 +13,7 @@ import {
   newId,
   nowIso,
 } from "./types.js";
-import { type OpenCodeAdapter } from "../adapters/opencode-adapter.js";
+import { type CoAgentAdapter } from "../adapters/adapter.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 
 export interface RunGoalOptions extends Partial<OrchestratorOptions> {
@@ -30,7 +30,7 @@ export class Orchestrator {
 
   constructor(
     private readonly options: OrchestratorOptions,
-    private readonly adapter: OpenCodeAdapter = options.adapter ?? new MockAdapter(),
+    private readonly adapter: CoAgentAdapter = options.adapter ?? new MockAdapter(),
   ) {
     this.registry = new AgentRegistry();
     this.ledger = new RunLedger(options.cwd);

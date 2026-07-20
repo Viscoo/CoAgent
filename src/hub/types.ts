@@ -46,6 +46,7 @@ export interface AgentInfo {
   name: string;
   projectDir: string;
   role: string;
+  backend: string;
   status: AgentStatus;
   currentTask: string;
   goal: string;
@@ -61,6 +62,7 @@ export interface RegisterPayload {
   name: string;
   projectDir: string;
   role: string;
+  backend?: string;
   goal: string;
   capabilities: string[];
 }
