@@ -151,7 +151,6 @@ export function startTui(options: TuiOptions): Promise<void> {
       parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-3",
       tags: true, padding: { left: 3, right: 2 },
       style: { bg: T.bg, fg: T.text }, mouse: true,
-      scrollable: true, scrollbar: { ch: " " },
     });
 
     function chatWidth(): number {
@@ -159,11 +158,21 @@ export function startTui(options: TuiOptions): Promise<void> {
     }
 
     let logLines: string[] = [];
+    let scrollOffset = 0;
+
+    function renderChat(): void {
+      const all = logLines.join("\n").split("\n");
+      const visH = (screen.height as number) - 3;
+      scrollOffset = Math.min(scrollOffset, Math.max(0, all.length - visH));
+      const start = Math.max(0, all.length - visH - scrollOffset);
+      chatArea.setContent(all.slice(start, start + visH).join("\n"));
+    }
+
     function pushLine(line: string): void {
       logLines.push(hardWrap(line, chatWidth()));
       if (logLines.length > 500) logLines.splice(0, logLines.length - 500);
-      chatArea.setContent(logLines.join("\n"));
-      chatArea.setScrollPerc(100);
+      scrollOffset = 0;
+      renderChat();
     }
 
     for (const line of buildLogoLines(screen.width as number)) pushLine(line);
@@ -382,7 +391,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       }
 
       if (cmd?.name === "/new") {
-        logLines = []; chatArea.setContent("");
+        logLines = []; scrollOffset = 0; renderChat();
         for (const l of buildLogoLines(screen.width as number)) pushLine(l);
         pushLine(""); pushLine(fg(T.text, "◈") + " New session started.");
         pushLine(""); messageCount = 0; screen.render(); renderSidebar(); return;
@@ -519,7 +528,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (cmd?.name === "/compact") {
         const total = logLines.length;
         if (total > 50) {
-          logLines = []; chatArea.setContent("");
+          logLines = []; scrollOffset = 0; renderChat();
           pushLine(fg(T.textMuted, "◈ Compacted " + total + " lines → kept last 20 messages"));
           pushLine("");
         } else { pushLine(fg(T.text, "◈") + " Already compact."); pushLine(""); }
@@ -611,8 +620,8 @@ export function startTui(options: TuiOptions): Promise<void> {
           if (now - lastRender < 60) return;
           lastRender = now;
           logLines[thinkingLineIdx] = hardWrap(fg(T.secondary, "┃") + " " + fg(T.text, assistantText), chatWidth());
-          chatArea.setContent(logLines.join("\n"));
-          chatArea.setScrollPerc(100);
+          scrollOffset = 0;
+          renderChat();
           screen.render();
         });
 
@@ -746,8 +755,8 @@ export function startTui(options: TuiOptions): Promise<void> {
         cursorPos = inputBuf.length; updateAutoComplete(); renderInput(); return;
       }
 
-      if (key.name === "pageup") { chatArea.scroll(-(Math.max(5, (screen.height as number) - 5))); renderInput(); return; }
-      if (key.name === "pagedown") { chatArea.scroll(Math.max(5, (screen.height as number) - 5)); renderInput(); return; }
+      if (key.name === "pageup") { scrollOffset += Math.max(5, (screen.height as number) - 5); renderChat(); screen.render(); renderInput(); return; }
+      if (key.name === "pagedown") { scrollOffset = Math.max(0, scrollOffset - Math.max(5, (screen.height as number) - 5)); renderChat(); screen.render(); renderInput(); return; }
 
       if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
         inputBuf = inputBuf.slice(0, cursorPos) + ch + inputBuf.slice(cursorPos);
@@ -760,8 +769,8 @@ export function startTui(options: TuiOptions): Promise<void> {
     screen.program.showCursor();
 
     chatArea.on("click", () => { renderInput(); });
-    chatArea.on("wheelup", () => { chatArea.scroll(-3); renderInput(); });
-    chatArea.on("wheeldown", () => { chatArea.scroll(3); renderInput(); });
+    chatArea.on("wheelup", () => { scrollOffset += 3; renderChat(); screen.render(); renderInput(); });
+    chatArea.on("wheeldown", () => { scrollOffset = Math.max(0, scrollOffset - 3); renderChat(); screen.render(); renderInput(); });
     screen.on("resize", () => { renderInput(); renderSidebar(); });
 
     renderSidebar();
