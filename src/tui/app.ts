@@ -122,8 +122,7 @@ export function startTui(options: TuiOptions): Promise<void> {
     let logLines: string[] = [];
     function pushLine(line: string): void {
       logLines.push(line);
-      const maxVisible = Math.max(6, (screen.height as number) - 3);
-      if (logLines.length > maxVisible) logLines.splice(0, logLines.length - maxVisible);
+      if (logLines.length > 500) logLines.splice(0, logLines.length - 500);
       chatArea.setContent(logLines.join("\n"));
       chatArea.setScrollPerc(100);
     }
@@ -702,8 +701,8 @@ export function startTui(options: TuiOptions): Promise<void> {
         cursorPos = inputBuf.length; updateAutoComplete(); renderInput(); return;
       }
 
-      if (key.name === "pageup") { screen.render(); return; }
-      if (key.name === "pagedown") { screen.render(); return; }
+      if (key.name === "pageup") { chatArea.scroll(-(Math.max(5, (screen.height as number) - 5))); renderInput(); return; }
+      if (key.name === "pagedown") { chatArea.scroll(Math.max(5, (screen.height as number) - 5)); renderInput(); return; }
 
       if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
         inputBuf = inputBuf.slice(0, cursorPos) + ch + inputBuf.slice(cursorPos);
