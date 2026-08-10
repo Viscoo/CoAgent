@@ -9,9 +9,8 @@ import { HubBridge } from "../hub/bridge.js";
 import { displayWidth } from "./logo.js";
 import { chat, loadChatConfig, saveChatConfig, resolveApiKey, getProviders, type ChatMessage } from "./chat-client.js";
 import {
-  getCurrentModel, setCurrentModel, resolveModelInput,
-  formatModelString, getKnownProviders, findConfigFile,
-  type ModelConfig,
+  resolveModelInput,
+  findConfigFile,
 } from "./model-config.js";
 
 const VERSION = "0.2.0";
@@ -165,16 +164,16 @@ export function startTui(options: TuiOptions): Promise<void> {
       const borderColor = agent?.color ?? T.primary;
       inputBorder.setContent(fg(borderColor, "┃"));
       inputArea.setContent(inputBuf || fg(T.textMuted, "Ask anything..."));
-      const model = getCurrentModel(options.cwd);
-      const modelName = model.model.length > 28 ? model.model.slice(0, 25) + "…" : model.model;
+      const cfg = loadChatConfig(options.cwd);
+      const modelName = cfg.model.length > 28 ? cfg.model.slice(0, 25) + "…" : cfg.model;
       inputMeta.setContent(
         fg(agent?.color ?? T.primary, agent?.name ?? "Build") + "  " +
         fg(T.textMuted, "·") + "  " + fg(T.text, modelName) + "  " +
-        fg(T.textMuted, "·") + "  " + fg(T.textMuted, model.provider),
+        fg(T.textMuted, "·") + "  " + fg(T.textMuted, cfg.provider),
       );
       renderFooter();
       screen.render();
-      const cursorCol = 4 + displayWidth(inputBuf.slice(0, cursorPos));
+      const cursorCol = 3 + displayWidth(inputBuf.slice(0, cursorPos));
       const termHeight = screen.height as number;
       try { screen.program.cup(termHeight - 3, cursorCol); screen.program.showCursor(); } catch {}
     }
@@ -191,14 +190,14 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (!sidebarVisible) { sidebar.hide(); mainArea.width = "100%"; return; }
       sidebar.show();
       mainArea.width = "100%-" + SIDEBAR_WIDTH;
-      const model = getCurrentModel(options.cwd);
+      const cfg = loadChatConfig(options.cwd);
       const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
       const shortCwd = options.cwd.split(/[/\\]/).slice(-2).join("/");
       const backendLabel = options.backend ?? "mock";
       const lines = [
         bold(fg(T.text, "CoAgent")), fg(T.textMuted, "v" + VERSION), "",
         fg(T.textMuted, "─── Backend ───"), fg(T.secondary, backendLabel), "",
-        fg(T.textMuted, "─── Model ───"), fg(agent?.color ?? T.primary, formatModelString(model)), "",
+        fg(T.textMuted, "─── Model ───"), fg(agent?.color ?? T.primary, cfg.provider + "/" + cfg.model), "",
         fg(T.textMuted, "─── Agent ───"), fg(agent?.color ?? T.primary, agent?.name ?? currentAgentRole),
         fg(T.textMuted, agent?.desc ?? ""), "",
         fg(T.textMuted, "─── Hub ───"),
@@ -302,13 +301,13 @@ export function startTui(options: TuiOptions): Promise<void> {
     }
 
     function cycleModel(): void {
-      const providers = Object.entries(getKnownProviders());
-      const current = getCurrentModel(options.cwd);
+      const providers = Object.entries(getProviders());
+      const current = loadChatConfig(options.cwd);
       let found = false;
       for (const [pid, provider] of providers) {
         for (let i = 0; i < provider.models.length; i++) {
           if (found) {
-            setCurrentModel(options.cwd, { provider: pid, model: provider.models[i]! });
+            saveChatConfig(options.cwd, { ...current, provider: pid, model: provider.models[i]! });
             pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, pid + "/" + provider.models[i]));
             pushLine(""); screen.render(); renderInput(); renderSidebar(); return;
           }
@@ -317,7 +316,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       }
       const first = providers[0];
       if (first) {
-        setCurrentModel(options.cwd, { provider: first[0], model: first[1].models[0]! });
+        saveChatConfig(options.cwd, { ...current, provider: first[0], model: first[1].models[0]! });
         pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, first[0] + "/" + first[1].models[0]));
         pushLine(""); screen.render(); renderInput(); renderSidebar();
       }
@@ -404,8 +403,9 @@ export function startTui(options: TuiOptions): Promise<void> {
           } else {
             const resolved = resolveModelInput(rest);
             if (resolved) {
-              setCurrentModel(options.cwd, resolved);
-              pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, formatModelString(resolved)));
+              const cfg = loadChatConfig(options.cwd);
+              saveChatConfig(options.cwd, { ...cfg, provider: resolved.provider, model: resolved.model });
+              pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, resolved.provider + "/" + resolved.model));
             } else {
               pushLine(fg(T.error, "✗") + " Unknown: " + rest);
               pushLine(fg(T.textMuted, "  Usage: /model <provider> [model] [api-key]"));
@@ -548,9 +548,6 @@ export function startTui(options: TuiOptions): Promise<void> {
     async function runGoal(goal: string): Promise<void> {
       conversationHistory.push({ role: "user", content: goal });
 
-      pushLine(fg(T.primary, "┃") + " " + fg(T.text, goal));
-      pushLine("");
-      screen.render();
 
       try {
         const apiKey = resolveApiKey(options.cwd);
@@ -717,7 +714,7 @@ export function startTui(options: TuiOptions): Promise<void> {
     });
 
     screen.program.hideCursor();
-    screen.program.cup(screen.height as number - 3, 4);
+    screen.program.cup(screen.height as number - 3, 3);
     screen.program.showCursor();
 
     chatArea.on("click", () => { renderInput(); });
