@@ -15,6 +15,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/status", description: "Show current run status", handler: async () => {} },
   { name: "/model", aliases: ["/models", "/mo"], description: "Show or change model (provider/model)", handler: async () => {} },
   { name: "/agents", description: "List or switch agent roles", handler: async () => {} },
+  { name: "/peers", aliases: ["/who"], description: "Show other agents on Hub", handler: async () => {} },
   { name: "/theme", description: "Switch color theme", handler: async () => {} },
   { name: "/compact", description: "Compact conversation history", handler: async () => {} },
   { name: "/diff", description: "View file changes from last run", handler: async () => {} },

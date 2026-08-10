@@ -95,6 +95,18 @@ await implementer.connect();
 planner.sendToAgent(implementer.id, "Please implement the registration API");
 ```
 
+### Live visibility: every window sees what other agents are doing
+
+`coagent run` / `coagent chat` / `coagent open` / the TUI auto-register with the Hub
+when it is online (best-effort: silently degrade if the Hub is not running).
+Every task the orchestrator executes (role + task title) is reported to the Hub
+in real time, so other windows see it instantly:
+
+- **TUI sidebar (Ctrl+B)**: a Peers section shows each agent's name, role, status (▶ busy / ○ idle / ● online) and current task
+- **`/peers` command**: lists all online agents and their live tasks in the chat area
+- **`coagent ps`**: command-line view of all online agents
+- **`chat` mode `peers` / `broadcast <msg>`**: see peers and broadcast a message to all agents
+
 ## Architecture
 
 ```

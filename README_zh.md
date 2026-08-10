@@ -150,6 +150,17 @@ coagent open
 coagent ps
 ```
 
+### 实时可见：每个窗口都能看到其他 Agent 在做什么
+
+`coagent run` / `coagent chat` / `coagent open` / TUI 都会在 Hub 在线时自动注册
+（best-effort：Hub 没启动则静默降级，不影响使用）。编排器每跑一个任务，
+都会把角色 + 任务名实时上报到 Hub，其他窗口立即可见：
+
+- **TUI 侧边栏（Ctrl+B）**：Peers 区块实时显示每个 Agent 的名称、角色、状态（▶ 忙碌 / ○ 空闲 / ● 在线）和当前任务
+- **`/peers` 命令**：在聊天区列出所有在线 Agent 及其实时任务
+- **`coagent ps`**：命令行查看所有在线 Agent
+- **`chat` 模式下 `peers` / `broadcast <msg>`**：查看同伴、向所有 Agent 广播消息
+
 ## 目录结构
 
 ```

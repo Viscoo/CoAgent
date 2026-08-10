@@ -2,6 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
+import { HubBridge } from "../hub/bridge.js";
 import { type CoAgentRun } from "../core/types.js";
 
 const BANNER = [
@@ -33,6 +34,15 @@ export interface ChatOptions {
 }
 
 export async function startChat(options: ChatOptions): Promise<void> {
+  const bridge = await HubBridge.connect({
+    cwd: options.cwd,
+    role: "chat",
+    capabilities: ["coagent", "chat"],
+  });
+  if (bridge.connected) {
+    console.log(`  🧠 Hub connected as ${bridge.selfName} — ${bridge.peerList.length} peer(s) online`);
+  }
+
   const adapter = new MockAdapter({ failureRate: options.failureRate ?? 0 });
   const orchestrator = new Orchestrator({
     cwd: options.cwd,
@@ -40,7 +50,10 @@ export async function startChat(options: ChatOptions): Promise<void> {
     dryRun: false,
     adapter,
     maxRetries: options.retries ?? 2,
-    onProgress: chatProgress,
+    onProgress: (event) => {
+      chatProgress(event);
+      bridge.reportProgress(event);
+    },
   });
 
   const rl = createInterface({ input: stdin, output: stdout });
@@ -55,6 +68,7 @@ export async function startChat(options: ChatOptions): Promise<void> {
     if (lower === "exit" || lower === "quit" || lower === "q") {
       console.log(`\n  👋 Bye! 下次见 🍤\n`);
       rl.close();
+      await bridge.dispose();
       return;
     }
 
@@ -90,6 +104,38 @@ export async function startChat(options: ChatOptions): Promise<void> {
         continue;
       }
       console.log(`  📋 Latest: ${run.id.slice(0, 12)}…  ${run.status}  ${run.goal.slice(0, 50)}\n`);
+      continue;
+    }
+
+    if (lower === "peers") {
+      const peers = bridge.peerList;
+      if (!bridge.connected) {
+        console.log("  📭 Hub not running. Start it with: coagent hub\n");
+      } else if (peers.length === 0) {
+        console.log("  📭 No other agents connected yet.\n");
+      } else {
+        console.log(`  📡 ${peers.length} peer(s) online:`);
+        for (const peer of peers) {
+          const icon = peer.status === "busy" ? "▶" : peer.status === "idle" ? "○" : "●";
+          const task = peer.currentTask ? `  ▸ ${peer.currentTask}` : "";
+          console.log(`    ${icon} ${peer.name}  [${peer.role}]  ${peer.status}${task}`);
+          if (peer.goal) console.log(`       goal: ${peer.goal.slice(0, 60)}`);
+        }
+        console.log("");
+      }
+      continue;
+    }
+
+    if (lower === "broadcast") {
+      const text = line.slice("broadcast".length).trim();
+      if (!text) {
+        console.log("  Usage: broadcast <message>\n");
+      } else if (!bridge.connected) {
+        console.log("  📭 Hub not running. Start it with: coagent hub\n");
+      } else {
+        bridge.client?.broadcast(text, "chat");
+        console.log(`  📢 Broadcast sent: ${text}\n`);
+      }
       continue;
     }
 

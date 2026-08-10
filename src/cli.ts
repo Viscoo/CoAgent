@@ -12,7 +12,7 @@ import { startChat } from "./cli/chat.js";
 import { startTui } from "./tui/index.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { type CoAgentRun, type OrchestratorOptions } from "./core/types.js";
-import { startHub, AgentClient } from "./hub/index.js";
+import { startHub, AgentClient, HubBridge } from "./hub/index.js";
 
 const VERSION = "0.2.0";
 
@@ -71,9 +71,28 @@ async function main(argv: string[]): Promise<void> {
 
   if (command === "run") {
     const goal = requireGoal(parsed);
-    const run = await orchestrator.run(goal);
-    console.log("");
-    printRun(run, "Run finished");
+    const bridge = await HubBridge.connect({
+      cwd,
+      role: "orchestrator",
+      goal,
+      capabilities: ["opencode", "coagent", "orchestrator"],
+    });
+    if (bridge.connected) {
+      console.log(`🧠 Hub: registered as ${bridge.selfName} — peers will see your progress`);
+    }
+    if (!options.dryRun) {
+      options.onProgress = (event) => {
+        printProgress(event);
+        bridge.reportProgress(event);
+      };
+    }
+    try {
+      const run = await orchestrator.run(goal);
+      console.log("");
+      printRun(run, "Run finished");
+    } finally {
+      await bridge.dispose();
+    }
     return;
   }
 

@@ -5,6 +5,7 @@ import { buildLogoLines } from "./logo.js";
 import { matchSlashCommands, resolveCommand, SLASH_COMMANDS } from "./commands.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
+import { HubBridge } from "../hub/bridge.js";
 import { displayWidth } from "./logo.js";
 import {
   getCurrentModel, setCurrentModel, resolveModelInput,
@@ -58,6 +59,9 @@ export function startTui(options: TuiOptions): Promise<void> {
     let historyIdx = -1;
     let isProcessing = false;
 
+    let hubBridge: HubBridge | null = null;
+    let hubStatus = "connecting…";
+
     const screen = blessed.screen({ smartCSR: true, title: "CoAgent", fullUnicode: true });
 
     const adapter = new MockAdapter({ failureRate: options.failureRate ?? 0 });
@@ -65,6 +69,7 @@ export function startTui(options: TuiOptions): Promise<void> {
       cwd: options.cwd, maxConcurrency: options.concurrency ?? 2, dryRun: false, adapter,
       maxRetries: options.retries ?? 2,
       onProgress: (event) => {
+        hubBridge?.reportProgress(event);
         const agent = AGENT_ROLES.find((a) => a.id === event.role);
         const color = agent?.color ?? T.text;
         const icon = event.kind === "task-complete" ? fg(T.success, "✓")
@@ -79,6 +84,23 @@ export function startTui(options: TuiOptions): Promise<void> {
         screen.render();
       },
     });
+
+    // Best-effort Hub 连接：在线则注册并显示 peers，不在线则静默降级
+    HubBridge.connect({ cwd: options.cwd, role: currentAgentRole, capabilities: ["opencode", "coagent"] })
+      .then((bridge) => {
+        hubBridge = bridge;
+        if (bridge.connected) {
+          hubStatus = "online";
+          bridge.onChange(() => { renderSidebar(); renderInput(); });
+          chatArea.pushLine(fg(T.success, "🧠") + " Hub connected as " + fg(T.text, bridge.selfName) +
+            " — " + fg(T.textMuted, bridge.peerList.length + " peer(s) online"));
+          chatArea.pushLine("");
+          chatArea.setScrollPerc(100);
+        } else {
+          hubStatus = "offline";
+        }
+        screen.render();
+      });
 
     const sidebar = blessed.box({
       parent: screen, top: 0, right: 0, width: SIDEBAR_WIDTH, height: "100%",
@@ -172,13 +194,38 @@ export function startTui(options: TuiOptions): Promise<void> {
         fg(T.textMuted, "─── Model ───"), fg(agent?.color ?? T.primary, formatModelString(model)), "",
         fg(T.textMuted, "─── Agent ───"), fg(agent?.color ?? T.primary, agent?.name ?? currentAgentRole),
         fg(T.textMuted, agent?.desc ?? ""), "",
-        fg(T.textMuted, "─── Messages ───"), fg(T.text, String(messageCount)), "",
+        fg(T.textMuted, "─── Hub ───"),
+        hubStatus === "online" ? fg(T.success, "● online") : fg(T.textMuted, "○ offline"),
+        hubBridge?.connected ? fg(T.textMuted, "you: " + hubBridge.selfName) : "", "",
+        fg(T.textMuted, "─── Peers ───"),
+      ];
+      const peers = hubBridge?.connected ? hubBridge.peerList : [];
+      if (!hubBridge?.connected) {
+        lines.push(fg(T.textMuted, "Hub not running"));
+        lines.push(fg(T.textMuted, "start: coagent hub"));
+      } else if (peers.length === 0) {
+        lines.push(fg(T.textMuted, "(no other agents)"));
+      } else {
+        for (const peer of peers) {
+          const icon = peer.status === "busy" ? fg(T.warning, "▶")
+            : peer.status === "idle" ? fg(T.textMuted, "○")
+            : fg(T.success, "●");
+          const name = peer.name.length > 18 ? peer.name.slice(0, 16) + "…" : peer.name;
+          lines.push(icon + " " + fg(T.text, name));
+          lines.push("  " + fg(T.textMuted, peer.role));
+          if (peer.currentTask) {
+            const task = peer.currentTask.length > 22 ? peer.currentTask.slice(0, 20) + "…" : peer.currentTask;
+            lines.push("  " + fg(T.info, task));
+          }
+        }
+      }
+      lines.push("", fg(T.textMuted, "─── Messages ───"), fg(T.text, String(messageCount)), "",
         fg(T.textMuted, "─── Directory ───"), fg(T.textMuted, shortCwd), "",
         fg(T.textMuted, "─── Shortcuts ───"),
         fg(T.textMuted, "Ctrl+N  New"), fg(T.textMuted, "Ctrl+P  Commands"),
         fg(T.textMuted, "Ctrl+L  Sessions"), fg(T.textMuted, "Ctrl+B  Sidebar"),
         fg(T.textMuted, "F2      Cycle model"), fg(T.textMuted, "Shift↵  Newline"),
-      ];
+      );
       sidebar.setContent(lines.join("\n"));
       screen.render();
     }
@@ -275,6 +322,7 @@ export function startTui(options: TuiOptions): Promise<void> {
 
       if (cmd?.name === "/exit") {
         chatArea.pushLine(fg(T.textMuted, "Goodbye! 👋")); chatArea.setScrollPerc(100); screen.render();
+        await hubBridge?.dispose();
         await new Promise((r) => setTimeout(r, 300)); screen.destroy(); resolve(); return;
       }
 
@@ -378,6 +426,28 @@ export function startTui(options: TuiOptions): Promise<void> {
         chatArea.setScrollPerc(100); screen.render(); return;
       }
 
+      if (cmd?.name === "/peers") {
+        if (!hubBridge?.connected) {
+          chatArea.pushLine(fg(T.warning, "○") + " Hub not running — start it with: " + fg(T.text, "coagent hub"));
+        } else {
+          const peers = hubBridge.peerList;
+          if (peers.length === 0) {
+            chatArea.pushLine(fg(T.textMuted, "No other agents connected yet."));
+          } else {
+            chatArea.pushLine(bold(fg(T.text, "Peers (" + peers.length + " online):")));
+            for (const peer of peers) {
+              const icon = peer.status === "busy" ? fg(T.warning, "▶")
+                : peer.status === "idle" ? fg(T.textMuted, "○")
+                : fg(T.success, "●");
+              chatArea.pushLine("  " + icon + " " + fg(T.text, peer.name) + "  " + fg(T.textMuted, "[" + peer.role + "] " + peer.status));
+              if (peer.currentTask) chatArea.pushLine("      ▸ " + fg(T.info, peer.currentTask));
+              if (peer.goal) chatArea.pushLine("      goal: " + fg(T.textMuted, peer.goal.slice(0, 60)));
+            }
+          }
+        }
+        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+      }
+
       if (cmd?.name === "/compact") {
         const total = chatArea.getLines().length;
         if (total > 50) {
@@ -475,10 +545,10 @@ export function startTui(options: TuiOptions): Promise<void> {
     screen.program.on("keypress", (ch: string, key: any) => {
       if (!key) return;
 
-      if (key.full === "C-c") { screen.destroy(); resolve(); return; }
+      if (key.full === "C-c") { screen.destroy(); hubBridge?.dispose(); resolve(); return; }
       if (key.full === "escape") {
         if (showingAutoComplete) { hideAutoComplete(); renderInput(); return; }
-        screen.destroy(); resolve(); return;
+        screen.destroy(); hubBridge?.dispose(); resolve(); return;
       }
 
       if (key.full === "C-n") { handleCommand("/new"); return; }
