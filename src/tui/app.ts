@@ -7,6 +7,7 @@ import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 import { HubBridge } from "../hub/bridge.js";
 import { displayWidth } from "./logo.js";
+import { chat, loadChatConfig, saveChatConfig, resolveApiKey, getProviders, type ChatMessage } from "./chat-client.js";
 import {
   getCurrentModel, setCurrentModel, resolveModelInput,
   formatModelString, getKnownProviders, findConfigFile,
@@ -62,7 +63,7 @@ export function startTui(options: TuiOptions): Promise<void> {
     let hubBridge: HubBridge | null = null;
     let hubStatus = "connecting…";
 
-    const screen = blessed.screen({ smartCSR: true, title: "CoAgent", fullUnicode: true });
+    const screen = blessed.screen({ smartCSR: false, title: "CoAgent", fullUnicode: true });
 
     const adapter = new MockAdapter({ failureRate: options.failureRate ?? 0 });
     const orchestrator = new Orchestrator({
@@ -78,10 +79,9 @@ export function startTui(options: TuiOptions): Promise<void> {
           : event.kind === "task-start" ? fg(color, "▶") : "·";
         const retry = (event.attempt && event.attempt > 1)
           ? " " + fg(T.warning, event.attempt + "/" + event.maxAttempts) : "";
-        chatArea.pushLine(icon + " " + event.message + retry);
-        if (event.error) chatArea.pushLine("  └─ " + fg(T.error, event.error));
-        chatArea.setScrollPerc(100);
-        screen.render();
+        pushLine(icon + " " + event.message + retry);
+        if (event.error) pushLine("  └─ " + fg(T.error, event.error));
+                screen.render();
       },
     });
 
@@ -92,11 +92,10 @@ export function startTui(options: TuiOptions): Promise<void> {
         if (bridge.connected) {
           hubStatus = "online";
           bridge.onChange(() => { renderSidebar(); renderInput(); });
-          chatArea.pushLine(fg(T.success, "🧠") + " Hub connected as " + fg(T.text, bridge.selfName) +
+          pushLine(fg(T.success, "🧠") + " Hub connected as " + fg(T.text, bridge.selfName) +
             " — " + fg(T.textMuted, bridge.peerList.length + " peer(s) online"));
-          chatArea.pushLine("");
-          chatArea.setScrollPerc(100);
-        } else {
+          pushLine("");
+                  } else {
           hubStatus = "offline";
         }
         screen.render();
@@ -114,18 +113,26 @@ export function startTui(options: TuiOptions): Promise<void> {
       style: { bg: T.bg },
     });
 
-    const chatArea = blessed.log({
+    const chatArea = blessed.box({
       parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-4",
-      scrollable: true, alwaysScroll: true,
-      scrollbar: { ch: "│", style: { fg: T.border }, track: { bg: T.bg } },
       tags: true, padding: { left: 3, right: 2 },
       style: { bg: T.bg, fg: T.text }, mouse: true,
     });
 
-    for (const line of buildLogoLines(screen.width as number)) chatArea.pushLine(line);
-    chatArea.pushLine("");
-    chatArea.pushLine(fg(T.textMuted, "Welcome! Type a goal to run, or /help for commands."));
-    chatArea.pushLine("");
+    // 自维护日志缓冲：非滚动 box + 行数裁剪（tail -f 效果），
+    // 彻底绕开 blessed 滚动渲染在宽字符/中文下的 diff 错位
+    let logLines: string[] = [];
+    function pushLine(line: string): void {
+      logLines.push(line);
+      const maxVisible = Math.max(6, (screen.height as number) - 6);
+      if (logLines.length > maxVisible) logLines.splice(0, logLines.length - maxVisible);
+      chatArea.setContent(logLines.join("\n"));
+    }
+
+    for (const line of buildLogoLines(screen.width as number)) pushLine(line);
+    pushLine("");
+    pushLine(fg(T.textMuted, "Welcome! Type a goal to run, or /help for commands."));
+    pushLine("");
 
     const inputBorder = blessed.box({
       parent: mainArea, bottom: 2, left: 0, width: "100%", height: 1,
@@ -269,8 +276,8 @@ export function startTui(options: TuiOptions): Promise<void> {
       if (line) {
         chatHistory.push(line); historyIdx = chatHistory.length; messageCount++;
         const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
-        chatArea.pushLine(fg(agent?.color ?? T.primary, "┃") + " " + fg(T.text, line));
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render();
+        pushLine(fg(agent?.color ?? T.primary, "┃") + " " + fg(T.text, line));
+        pushLine(""); screen.render();
         if (!isProcessing) {
           isProcessing = true;
           handleCommand(line).finally(() => { isProcessing = false; renderInput(); renderSidebar(); });
@@ -302,8 +309,8 @@ export function startTui(options: TuiOptions): Promise<void> {
         for (let i = 0; i < provider.models.length; i++) {
           if (found) {
             setCurrentModel(options.cwd, { provider: pid, model: provider.models[i]! });
-            chatArea.pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, pid + "/" + provider.models[i]));
-            chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar(); return;
+            pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, pid + "/" + provider.models[i]));
+            pushLine(""); screen.render(); renderInput(); renderSidebar(); return;
           }
           if (pid === current.provider && provider.models[i] === current.model) found = true;
         }
@@ -311,8 +318,8 @@ export function startTui(options: TuiOptions): Promise<void> {
       const first = providers[0];
       if (first) {
         setCurrentModel(options.cwd, { provider: first[0], model: first[1].models[0]! });
-        chatArea.pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, first[0] + "/" + first[1].models[0]));
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar();
+        pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, first[0] + "/" + first[1].models[0]));
+        pushLine(""); screen.render(); renderInput(); renderSidebar();
       }
     }
 
@@ -321,86 +328,114 @@ export function startTui(options: TuiOptions): Promise<void> {
       const rest = line.includes(" ") ? line.slice(line.indexOf(" ") + 1) : "";
 
       if (cmd?.name === "/exit") {
-        chatArea.pushLine(fg(T.textMuted, "Goodbye! 👋")); chatArea.setScrollPerc(100); screen.render();
+        pushLine(fg(T.textMuted, "Goodbye! 👋")); screen.render();
         await hubBridge?.dispose();
         await new Promise((r) => setTimeout(r, 300)); screen.destroy(); resolve(); return;
       }
 
       if (cmd?.name === "/help") {
-        chatArea.pushLine(bold(fg(T.text, "Commands:"))); chatArea.pushLine(hr());
+        pushLine(bold(fg(T.text, "Commands:"))); pushLine(hr());
         for (const c of SLASH_COMMANDS) {
           const alias = c.aliases ? " " + fg(T.textMuted, "(" + c.aliases.join(", ") + ")") : "";
-          chatArea.pushLine("  " + fg(T.text, c.name.padEnd(14)) + " " + fg(T.textMuted, c.description) + alias);
+          pushLine("  " + fg(T.text, c.name.padEnd(14)) + " " + fg(T.textMuted, c.description) + alias);
         }
-        chatArea.pushLine(""); chatArea.pushLine(bold(fg(T.text, "Shortcuts:"))); chatArea.pushLine(hr());
+        pushLine(""); pushLine(bold(fg(T.text, "Shortcuts:"))); pushLine(hr());
         const sc = [
           ["Ctrl+N", "New session"], ["Ctrl+P", "Command palette"], ["Ctrl+L", "Session list"],
           ["Ctrl+B", "Toggle sidebar"], ["F2", "Cycle model"], ["Shift+Enter", "Insert newline"],
           ["Ctrl+A/E", "Home/End"], ["Ctrl+U/K", "Delete to start/end"], ["Ctrl+Left/Right", "Word jump"],
         ];
-        for (const [k, v] of sc) chatArea.pushLine("  " + fg(T.text, k.padEnd(16)) + v);
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+        for (const [k, v] of sc) pushLine("  " + fg(T.text, k.padEnd(16)) + v);
+        pushLine(""); screen.render(); return;
       }
 
       if (cmd?.name === "/new") {
-        chatArea.setContent("");
-        for (const l of buildLogoLines(screen.width as number)) chatArea.pushLine(l);
-        chatArea.pushLine(""); chatArea.pushLine(fg(T.text, "◈") + " New session started.");
-        chatArea.pushLine(""); messageCount = 0; chatArea.setScrollPerc(100); screen.render(); renderSidebar(); return;
+        logLines = []; chatArea.setContent("");
+        for (const l of buildLogoLines(screen.width as number)) pushLine(l);
+        pushLine(""); pushLine(fg(T.text, "◈") + " New session started.");
+        pushLine(""); messageCount = 0; screen.render(); renderSidebar(); return;
       }
 
       if (cmd?.name === "/sessions") {
         const sessions = loadSessions();
         if (sessions.length === 0) {
-          chatArea.pushLine(fg(T.textMuted, "No sessions found. Run a goal to create one."));
+          pushLine(fg(T.textMuted, "No sessions found. Run a goal to create one."));
         } else {
-          chatArea.pushLine(bold(fg(T.text, "Sessions:"))); chatArea.pushLine(hr());
+          pushLine(bold(fg(T.text, "Sessions:"))); pushLine(hr());
           for (const s of sessions.slice(0, 20)) {
             const si = s.status === "completed" ? fg(T.success, "✓") : s.status === "failed" ? fg(T.error, "✗") : fg(T.warning, "○");
             const date = s.createdAt ? new Date(s.createdAt).toLocaleString() : "";
-            chatArea.pushLine("  " + si + " " + fg(T.text, s.id.slice(0, 20)) + " " + fg(T.textMuted, s.status));
-            chatArea.pushLine("    " + fg(T.textMuted, s.goal.slice(0, 60) + (s.goal.length > 60 ? "…" : "")));
-            if (date) chatArea.pushLine("    " + fg(T.textMuted, date));
+            pushLine("  " + si + " " + fg(T.text, s.id.slice(0, 20)) + " " + fg(T.textMuted, s.status));
+            pushLine("    " + fg(T.textMuted, s.goal.slice(0, 60) + (s.goal.length > 60 ? "…" : "")));
+            if (date) pushLine("    " + fg(T.textMuted, date));
           }
-          chatArea.pushLine(""); chatArea.pushLine(fg(T.textMuted, "Use: coagent status <run-id> / coagent resume <run-id>"));
+          pushLine(""); pushLine(fg(T.textMuted, "Use: coagent status <run-id> / coagent resume <run-id>"));
         }
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+        pushLine(""); screen.render(); return;
       }
 
       if (cmd?.name === "/status") {
         const run = await orchestrator.status();
-        if (!run) { chatArea.pushLine(fg(T.textMuted, "📭 No runs yet.")); chatArea.pushLine(""); }
+        if (!run) { pushLine(fg(T.textMuted, "📭 No runs yet.")); pushLine(""); }
         else printRun(run);
-        chatArea.setScrollPerc(100); screen.render(); return;
+        screen.render(); return;
       }
 
       if (cmd?.name === "/model") {
-        if (rest) {
-          const resolved = resolveModelInput(rest);
-          if (resolved) {
-            const configPath = setCurrentModel(options.cwd, resolved);
-            chatArea.pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, formatModelString(resolved)));
-            chatArea.pushLine(fg(T.textMuted, "  Saved to " + configPath));
+        const parts = rest.split(/\s+/).filter(Boolean);
+        if (parts.length >= 1) {
+          const providers = getProviders();
+          const modelCfg = loadChatConfig(options.cwd);
+
+          if (parts[0] === "key" && parts[1]) {
+            saveChatConfig(options.cwd, { ...modelCfg, apiKey: parts[1] });
+            pushLine(fg(T.success, "✓") + " API key saved to .coagent/chat.json");
+          } else if (providers[parts[0]]) {
+            const provider = providers[parts[0]];
+            const model = parts[1] && provider.models.includes(parts[1]) ? parts[1] : provider.models[0]!;
+            const apiKey = parts[2] ?? modelCfg.apiKey;
+            saveChatConfig(options.cwd, { provider: parts[0], model, apiKey });
+            pushLine(fg(T.success, "✓") + " Provider: " + fg(T.primary, parts[0]) + "  Model: " + fg(T.primary, model));
+            if (apiKey) pushLine(fg(T.textMuted, "  API key configured."));
+            else {
+              const envKey = provider.envKey;
+              pushLine(fg(T.textMuted, "  Set API key: /model key <your-key>  or  export " + envKey + "=sk-xxx"));
+            }
           } else {
-            chatArea.pushLine(fg(T.error, "✗") + " Unknown model: " + rest);
-            chatArea.pushLine(fg(T.textMuted, "  Usage: /model <provider/model>"));
-            chatArea.pushLine(fg(T.textMuted, "  Example: /model anthropic/claude-sonnet-4-20250514"));
-            chatArea.pushLine(fg(T.textMuted, "  Type /model with no args to see available providers."));
-          }
-        } else {
-          const current = getCurrentModel(options.cwd);
-          chatArea.pushLine(fg(T.text, "◈") + " Current: " + fg(T.primary, formatModelString(current)));
-          chatArea.pushLine(""); chatArea.pushLine(fg(T.text, "Providers:"));
-          for (const [id, provider] of Object.entries(getKnownProviders())) {
-            chatArea.pushLine("  " + fg(T.secondary, id) + " " + fg(T.textMuted, "(" + provider.name + ")"));
-            for (const model of provider.models) {
-              const marker = id === current.provider && model === current.model ? " " + fg(T.success, "← current") : "";
-              chatArea.pushLine("    " + fg(T.textMuted, id + "/" + model) + marker);
+            const resolved = resolveModelInput(rest);
+            if (resolved) {
+              setCurrentModel(options.cwd, resolved);
+              pushLine(fg(T.success, "✓") + " Model: " + fg(T.primary, formatModelString(resolved)));
+            } else {
+              pushLine(fg(T.error, "✗") + " Unknown: " + rest);
+              pushLine(fg(T.textMuted, "  Usage: /model <provider> [model] [api-key]"));
+              pushLine(fg(T.textMuted, "  Or:    /model key <api-key>"));
+              pushLine(fg(T.textMuted, "  Example: /model deepseek deepseek-chat sk-xxx"));
             }
           }
-          chatArea.pushLine(""); chatArea.pushLine(fg(T.textMuted, "Usage: /model <provider/model>  ·  F2 to cycle"));
+        } else {
+          const cfg = loadChatConfig(options.cwd);
+          const providers = getProviders();
+          const provider = providers[cfg.provider];
+          const hasKey = !!resolveApiKey(options.cwd);
+          pushLine(fg(T.text, "◈") + " Current: " + fg(T.primary, cfg.provider + "/" + cfg.model));
+          pushLine("  API key: " + (hasKey ? fg(T.success, "✓ configured") : fg(T.error, "✗ missing")));
+          if (!hasKey && provider) {
+            pushLine(fg(T.textMuted, "  Set: /model key <key>  or  export " + provider.envKey + "=sk-xxx"));
+          }
+          pushLine(""); pushLine(fg(T.text, "Providers:"));
+          for (const [id, p] of Object.entries(providers)) {
+            pushLine("  " + fg(T.secondary, id) + " " + fg(T.textMuted, "(" + p.name + ")"));
+            for (const m of p.models) {
+              const marker = id === cfg.provider && m === cfg.model ? " " + fg(T.success, "← current") : "";
+              pushLine("    " + fg(T.textMuted, id + "/" + m) + marker);
+            }
+          }
+          pushLine("");
+          pushLine(fg(T.textMuted, "Usage: /model <provider> [model] [api-key]"));
+          pushLine(fg(T.textMuted, "       /model key <api-key>"));
         }
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar(); return;
+        pushLine(""); screen.render(); renderInput(); renderSidebar(); return;
       }
 
       if (cmd?.name === "/agents") {
@@ -408,135 +443,186 @@ export function startTui(options: TuiOptions): Promise<void> {
           const found = AGENT_ROLES.find((a) => a.id === rest.toLowerCase() || a.name.toLowerCase() === rest.toLowerCase());
           if (found) {
             currentAgentRole = found.id;
-            chatArea.pushLine(fg(T.success, "✓") + " Agent: " + fg(found.color, found.name) + " — " + found.desc);
-          } else { chatArea.pushLine(fg(T.error, "✗") + " Unknown agent: " + rest); }
+            pushLine(fg(T.success, "✓") + " Agent: " + fg(found.color, found.name) + " — " + found.desc);
+          } else { pushLine(fg(T.error, "✗") + " Unknown agent: " + rest); }
         } else {
-          chatArea.pushLine(bold(fg(T.text, "Agents:")));
+          pushLine(bold(fg(T.text, "Agents:")));
           for (const a of AGENT_ROLES) {
             const marker = a.id === currentAgentRole ? " " + fg(T.success, "← current") : "";
-            chatArea.pushLine("  " + fg(a.color, a.id.padEnd(14)) + " " + fg(T.text, a.name) + " " + fg(T.textMuted, "— " + a.desc) + marker);
+            pushLine("  " + fg(a.color, a.id.padEnd(14)) + " " + fg(T.text, a.name) + " " + fg(T.textMuted, "— " + a.desc) + marker);
           }
-          chatArea.pushLine(""); chatArea.pushLine(fg(T.textMuted, "Usage: /agents <role>"));
+          pushLine(""); pushLine(fg(T.textMuted, "Usage: /agents <role>"));
         }
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); renderInput(); renderSidebar(); return;
+        pushLine(""); screen.render(); renderInput(); renderSidebar(); return;
       }
 
       if (cmd?.name === "/theme") {
-        chatArea.pushLine(fg(T.textMuted, "Theme is fixed to OpenCode dark.")); chatArea.pushLine("");
-        chatArea.setScrollPerc(100); screen.render(); return;
+        pushLine(fg(T.textMuted, "Theme is fixed to OpenCode dark.")); pushLine("");
+        screen.render(); return;
       }
 
       if (cmd?.name === "/peers") {
         if (!hubBridge?.connected) {
-          chatArea.pushLine(fg(T.warning, "○") + " Hub not running — start it with: " + fg(T.text, "coagent hub"));
+          pushLine(fg(T.warning, "○") + " Hub not running — start it with: " + fg(T.text, "coagent hub"));
         } else {
           const peers = hubBridge.peerList;
           if (peers.length === 0) {
-            chatArea.pushLine(fg(T.textMuted, "No other agents connected yet."));
+            pushLine(fg(T.textMuted, "No other agents connected yet."));
           } else {
-            chatArea.pushLine(bold(fg(T.text, "Peers (" + peers.length + " online):")));
+            pushLine(bold(fg(T.text, "Peers (" + peers.length + " online):")));
             for (const peer of peers) {
               const icon = peer.status === "busy" ? fg(T.warning, "▶")
                 : peer.status === "idle" ? fg(T.textMuted, "○")
                 : fg(T.success, "●");
-              chatArea.pushLine("  " + icon + " " + fg(T.text, peer.name) + "  " + fg(T.textMuted, "[" + peer.role + "] " + peer.status));
-              if (peer.currentTask) chatArea.pushLine("      ▸ " + fg(T.info, peer.currentTask));
-              if (peer.goal) chatArea.pushLine("      goal: " + fg(T.textMuted, peer.goal.slice(0, 60)));
+              pushLine("  " + icon + " " + fg(T.text, peer.name) + "  " + fg(T.textMuted, "[" + peer.role + "] " + peer.status));
+              if (peer.currentTask) pushLine("      ▸ " + fg(T.info, peer.currentTask));
+              if (peer.goal) pushLine("      goal: " + fg(T.textMuted, peer.goal.slice(0, 60)));
             }
           }
         }
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+        pushLine(""); screen.render(); return;
       }
 
       if (cmd?.name === "/compact") {
-        const total = chatArea.getLines().length;
+        const total = logLines.length;
         if (total > 50) {
-          chatArea.setContent("");
-          chatArea.pushLine(fg(T.textMuted, "◈ Compacted " + total + " lines → kept last 20 messages"));
-          chatArea.pushLine("");
-        } else { chatArea.pushLine(fg(T.text, "◈") + " Already compact."); chatArea.pushLine(""); }
-        chatArea.setScrollPerc(100); screen.render(); return;
+          logLines = []; chatArea.setContent("");
+          pushLine(fg(T.textMuted, "◈ Compacted " + total + " lines → kept last 20 messages"));
+          pushLine("");
+        } else { pushLine(fg(T.text, "◈") + " Already compact."); pushLine(""); }
+        screen.render(); return;
       }
 
       if (cmd?.name === "/diff") {
         const run = await orchestrator.status();
-        if (!run) { chatArea.pushLine(fg(T.textMuted, "No runs yet.")); }
+        if (!run) { pushLine(fg(T.textMuted, "No runs yet.")); }
         else {
           const changedFiles = new Set<string>();
           for (const ar of run.agentRuns) for (const f of ar.diffFiles) changedFiles.add(f);
-          if (changedFiles.size === 0) { chatArea.pushLine(fg(T.textMuted, "No file changes.")); }
+          if (changedFiles.size === 0) { pushLine(fg(T.textMuted, "No file changes.")); }
           else {
-            chatArea.pushLine(bold(fg(T.text, "Changed (" + changedFiles.size + "):")));
-            for (const f of [...changedFiles].sort()) chatArea.pushLine("  " + fg(T.diffAdded, f));
+            pushLine(bold(fg(T.text, "Changed (" + changedFiles.size + "):")));
+            for (const f of [...changedFiles].sort()) pushLine("  " + fg(T.diffAdded, f));
           }
         }
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+        pushLine(""); screen.render(); return;
       }
 
       if (cmd?.name === "/config") {
         const configPath = findConfigFile(options.cwd);
         if (configPath) {
-          chatArea.pushLine(fg(T.text, "◈") + " Config: " + fg(T.secondary, configPath));
+          pushLine(fg(T.text, "◈") + " Config: " + fg(T.secondary, configPath));
           try {
             const raw = readFileSync(configPath, "utf-8");
-            chatArea.pushLine(hr());
-            for (const ln of raw.split("\n")) chatArea.pushLine("  " + fg(T.textMuted, ln));
-          } catch { chatArea.pushLine(fg(T.error, "✗") + " Could not read config."); }
-        } else { chatArea.pushLine(fg(T.textMuted, "No config file. Use /model to create one.")); }
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+            pushLine(hr());
+            for (const ln of raw.split("\n")) pushLine("  " + fg(T.textMuted, ln));
+          } catch { pushLine(fg(T.error, "✗") + " Could not read config."); }
+        } else { pushLine(fg(T.textMuted, "No config file. Use /model to create one.")); }
+        pushLine(""); screen.render(); return;
       }
 
       if (cmd?.name === "/plan") {
-        if (!rest) { chatArea.pushLine(fg(T.error, "✗") + " /plan requires a goal. Usage: /plan <goal>"); chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return; }
-        chatArea.pushLine(fg(T.text, "◈") + " Planning: " + rest); chatArea.pushLine(hr());
-        chatArea.setScrollPerc(100); screen.render();
+        if (!rest) { pushLine(fg(T.error, "✗") + " /plan requires a goal. Usage: /plan <goal>"); pushLine(""); screen.render(); return; }
+        pushLine(fg(T.text, "◈") + " Planning: " + rest); pushLine(hr());
+        screen.render();
         try { const run = await orchestrator.plan(rest); printRun(run); }
-        catch (error) { chatArea.pushLine(fg(T.error, "✗ Error: " + (error instanceof Error ? error.message : String(error)))); }
-        chatArea.setScrollPerc(100); screen.render(); return;
+        catch (error) { pushLine(fg(T.error, "✗ Error: " + (error instanceof Error ? error.message : String(error)))); }
+        screen.render(); return;
       }
 
       if (cmd?.name === "/run") {
-        if (!rest) { chatArea.pushLine(fg(T.error, "✗") + " /run requires a goal. Usage: /run <goal>"); chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return; }
-        await runGoal(rest); return;
+        if (!rest) { pushLine(fg(T.error, "✗") + " /run requires a goal. Usage: /run <goal>"); pushLine(""); screen.render(); return; }
+        await orchestrateRun(rest); return;
       }
 
       if (line.startsWith("/")) {
-        chatArea.pushLine(fg(T.error, "✗") + " Unknown command: " + line + ". Type " + fg(T.text, "/help") + " for commands.");
-        chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render(); return;
+        pushLine(fg(T.error, "✗") + " Unknown command: " + line + ". Type " + fg(T.text, "/help") + " for commands.");
+        pushLine(""); screen.render(); return;
       }
 
       await runGoal(line);
     }
 
+    const conversationHistory: ChatMessage[] = [];
+
     async function runGoal(goal: string): Promise<void> {
-      chatArea.pushLine(fg(T.text, "◈") + " Goal: " + goal);
-      chatArea.pushLine(fg(T.textMuted, "🎭 planner → explorer → implementer → reviewer + tester → integrator"));
-      chatArea.pushLine(hr()); chatArea.setScrollPerc(100); screen.render();
+      conversationHistory.push({ role: "user", content: goal });
+
+      pushLine(fg(T.primary, "┃") + " " + fg(T.text, goal));
+      pushLine("");
+      screen.render();
+
+      try {
+        const apiKey = resolveApiKey(options.cwd);
+        if (!apiKey) {
+          const cfg = loadChatConfig(options.cwd);
+          const providers = getProviders();
+          const provider = providers[cfg.provider];
+          pushLine(fg(T.error, "✗") + " No API key for " + fg(T.text, cfg.provider) + ".");
+          pushLine(fg(T.textMuted, "  Set " + (provider?.envKey ?? "API_KEY") + " env var or use:"));
+          pushLine(fg(T.textMuted, "  /model " + cfg.provider + " <model> <api-key>"));
+          pushLine("");
+          conversationHistory.pop();
+          screen.render();
+          return;
+        }
+
+        pushLine(fg(T.textMuted, "  ⠋ Thinking…"));
+        screen.render();
+
+        let assistantText = "";
+        const thinkingLineIdx = logLines.length - 1;
+
+        const result = await chat(conversationHistory, options.cwd, (token) => {
+          assistantText += token;
+          logLines[thinkingLineIdx] = fg(T.secondary, "┃") + " " + fg(T.text, assistantText);
+          screen.render();
+        });
+
+        if (!result) {
+          logLines[thinkingLineIdx] = fg(T.error, "✗") + " Empty response from API.";
+        }
+
+        conversationHistory.push({ role: "assistant", content: result });
+        pushLine("");
+        screen.render();
+      } catch (error) {
+        pushLine(fg(T.error, "✗ " + (error instanceof Error ? error.message : String(error))));
+        pushLine("");
+        conversationHistory.pop();
+        screen.render();
+      }
+    }
+
+    async function orchestrateRun(goal: string): Promise<void> {
+      pushLine(fg(T.text, "◈") + " Orchestrating: " + goal);
+      pushLine(fg(T.textMuted, "🎭 planner → explorer → implementer → reviewer + tester → integrator"));
+      pushLine(hr()); screen.render();
       try {
         const run = await orchestrator.run(goal);
-        chatArea.pushLine(""); printRun(run);
+        pushLine(""); printRun(run);
       } catch (error) {
-        chatArea.pushLine(fg(T.error, "✗ Error: " + (error instanceof Error ? error.message : String(error))));
+        pushLine(fg(T.error, "✗ Error: " + (error instanceof Error ? error.message : String(error))));
       }
-      chatArea.pushLine(""); chatArea.setScrollPerc(100); screen.render();
+      pushLine(""); screen.render();
     }
 
     function printRun(run: import("../core/types.js").CoAgentRun): void {
       const badge = run.status === "completed" ? fg(T.success, "✓")
         : run.status === "failed" ? fg(T.error, "✗")
         : run.status === "blocked" ? fg(T.warning, "⊘") : "·";
-      chatArea.pushLine(badge + " Finished: " + run.id.slice(0, 12) + "…");
-      chatArea.pushLine("  Goal:   " + run.goal);
-      chatArea.pushLine("  Status: " + fg(T.textMuted, run.status));
-      if (run.mergePlan) chatArea.pushLine("  Merge:  " + fg(T.textMuted, run.mergePlan.status + (run.mergePlan.conflicts.length > 0 ? " (" + run.mergePlan.conflicts.length + " conflicts)" : "")));
-      if (run.riskReport) chatArea.pushLine("  Risk:   " + fg(T.textMuted, run.riskReport.status + " (" + (run.riskReport.risks?.length ?? 0) + " risks)"));
-      chatArea.pushLine("  Tasks:");
+      pushLine(badge + " Finished: " + run.id.slice(0, 12) + "…");
+      pushLine("  Goal:   " + run.goal);
+      pushLine("  Status: " + fg(T.textMuted, run.status));
+      if (run.mergePlan) pushLine("  Merge:  " + fg(T.textMuted, run.mergePlan.status + (run.mergePlan.conflicts.length > 0 ? " (" + run.mergePlan.conflicts.length + " conflicts)" : "")));
+      if (run.riskReport) pushLine("  Risk:   " + fg(T.textMuted, run.riskReport.status + " (" + (run.riskReport.risks?.length ?? 0) + " risks)"));
+      pushLine("  Tasks:");
       for (const task of run.taskGraph.tasks) {
         const agent = AGENT_ROLES.find((a) => a.id === task.role);
         const tBadge = task.status === "completed" ? fg(T.success, "✓")
           : task.status === "failed" ? fg(T.error, "✗")
           : task.status === "running" ? fg(agent?.color ?? T.text, "▶") : "·";
-        chatArea.pushLine("    " + tBadge + " " + fg(agent?.color ?? T.textMuted, task.role.padEnd(11)) + " " + task.title);
+        pushLine("    " + tBadge + " " + fg(agent?.color ?? T.textMuted, task.role.padEnd(11)) + " " + task.title);
       }
     }
 
@@ -621,8 +707,8 @@ export function startTui(options: TuiOptions): Promise<void> {
         cursorPos = inputBuf.length; updateAutoComplete(); renderInput(); return;
       }
 
-      if (key.name === "pageup") { chatArea.scroll(-20); screen.render(); return; }
-      if (key.name === "pagedown") { chatArea.scroll(20); screen.render(); return; }
+      if (key.name === "pageup") { screen.render(); return; }
+      if (key.name === "pagedown") { screen.render(); return; }
 
       if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
         inputBuf = inputBuf.slice(0, cursorPos) + ch + inputBuf.slice(cursorPos);
