@@ -27,6 +27,41 @@ function fg(c: string, t: string): string { return "{" + c + "-fg}" + t + "{/}";
 function bold(t: string): string { return "{bold}" + t + "{/bold}"; }
 function hr(): string { return fg(T.border, "─".repeat(50)); }
 
+function hardWrap(text: string, maxW: number): string {
+  if (maxW <= 0) return text;
+  const lines: string[] = [];
+  let current = "";
+  let width = 0;
+  let inTag = false;
+  let tagBuf = "";
+  let lastColor = "";
+
+  for (const ch of text) {
+    if (ch === "{") { inTag = true; tagBuf = "{"; continue; }
+    if (inTag) {
+      tagBuf += ch;
+      if (ch === "}") {
+        inTag = false;
+        current += tagBuf;
+        if (tagBuf === "{/}" || tagBuf.startsWith("{/")) lastColor = "";
+        else if (tagBuf.includes("-fg}")) lastColor = tagBuf;
+      }
+      continue;
+    }
+    const w = displayWidth(ch);
+    if (width + w > maxW) {
+      lines.push(current + "{/}");
+      current = lastColor + ch;
+      width = w;
+    } else {
+      current += ch;
+      width += w;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join("\n");
+}
+
 const AGENT_ROLES = [
   { id: "planner", name: "Plan", color: T.accent, desc: "Break down goals into tasks" },
   { id: "explorer", name: "Explore", color: T.info, desc: "Inspect repo and find risks" },
@@ -114,14 +149,18 @@ export function startTui(options: TuiOptions): Promise<void> {
 
     const chatArea = blessed.box({
       parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-3",
-      tags: true, padding: { left: 3, right: 2 }, wrap: true,
+      tags: true, padding: { left: 3, right: 2 },
       style: { bg: T.bg, fg: T.text }, mouse: true,
       scrollable: true, scrollbar: { ch: " " },
     });
 
+    function chatWidth(): number {
+      return (screen.width as number) - (sidebarVisible ? SIDEBAR_WIDTH : 0) - 5;
+    }
+
     let logLines: string[] = [];
     function pushLine(line: string): void {
-      logLines.push(line);
+      logLines.push(hardWrap(line, chatWidth()));
       if (logLines.length > 500) logLines.splice(0, logLines.length - 500);
       chatArea.setContent(logLines.join("\n"));
       chatArea.setScrollPerc(100);
@@ -564,10 +603,14 @@ export function startTui(options: TuiOptions): Promise<void> {
 
         let assistantText = "";
         const thinkingLineIdx = logLines.length - 1;
+        let lastRender = 0;
 
         const result = await chat(conversationHistory, options.cwd, (token) => {
           assistantText += token;
-          logLines[thinkingLineIdx] = fg(T.secondary, "┃") + " " + fg(T.text, assistantText);
+          const now = Date.now();
+          if (now - lastRender < 60) return;
+          lastRender = now;
+          logLines[thinkingLineIdx] = hardWrap(fg(T.secondary, "┃") + " " + fg(T.text, assistantText), chatWidth());
           chatArea.setContent(logLines.join("\n"));
           chatArea.setScrollPerc(100);
           screen.render();
@@ -575,6 +618,8 @@ export function startTui(options: TuiOptions): Promise<void> {
 
         if (!result) {
           logLines[thinkingLineIdx] = fg(T.error, "✗") + " Empty response from API.";
+        } else {
+          logLines[thinkingLineIdx] = hardWrap(fg(T.secondary, "┃") + " " + fg(T.text, result), chatWidth());
         }
 
         conversationHistory.push({ role: "assistant", content: result });
@@ -715,6 +760,8 @@ export function startTui(options: TuiOptions): Promise<void> {
     screen.program.showCursor();
 
     chatArea.on("click", () => { renderInput(); });
+    chatArea.on("wheelup", () => { chatArea.scroll(-3); renderInput(); });
+    chatArea.on("wheeldown", () => { chatArea.scroll(3); renderInput(); });
     screen.on("resize", () => { renderInput(); renderSidebar(); });
 
     renderSidebar();
