@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 const LOGO_RAW = [
   " ██████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗",
   "██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝",
@@ -7,7 +9,14 @@ const LOGO_RAW = [
   " ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ",
 ];
 
-const LOGO_COLORS = ["cyan-fg", "cyan-fg", "magenta-fg", "magenta-fg", "blue-fg", "blue-fg"];
+const LOGO_COLORS: ((s: string) => string)[] = [
+  chalk.cyan,
+  chalk.cyan,
+  chalk.magenta,
+  chalk.magenta,
+  chalk.green,
+  chalk.green,
+];
 
 export function displayWidth(str: string): number {
   let w = 0;
@@ -40,11 +49,14 @@ export function buildLogoLines(termWidth: number): string[] {
   const padStr = " ".repeat(pad);
   const lines: string[] = [""];
   for (let i = 0; i < LOGO_RAW.length; i++) {
-    lines.push(`${padStr}{${LOGO_COLORS[i]}}${LOGO_RAW[i]}{/${LOGO_COLORS[i]}}`);
+    lines.push(padStr + LOGO_COLORS[i]!(LOGO_RAW[i]!));
   }
   lines.push("");
-  const taglinePad = Math.max(0, Math.floor((termWidth - 38) / 2));
-  lines.push(`${" ".repeat(taglinePad)}{white-fg}◈ Collaborative Agent Framework{/white-fg} {#6c7086-fg}v0.2.0{/#6c7086-fg}`);
+  const tagline = "◈ Collaborative Agent Framework";
+  const version = "v0.2.0";
+  const taglineW = displayWidth(tagline) + 1 + version.length;
+  const taglinePad = Math.max(0, Math.floor((termWidth - taglineW) / 2));
+  lines.push(" ".repeat(taglinePad) + chalk.white(tagline) + " " + chalk.gray(version));
   lines.push("");
   return lines;
 }
