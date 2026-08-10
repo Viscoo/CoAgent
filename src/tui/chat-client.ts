@@ -1,5 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -56,20 +60,33 @@ function configPath(cwd: string): string {
   return join(cwd, ".coagent", "chat.json");
 }
 
-export function loadChatConfig(cwd: string): ChatConfig {
-  const p = configPath(cwd);
-  if (existsSync(p)) {
-    try {
-      return JSON.parse(readFileSync(p, "utf-8")) as ChatConfig;
-    } catch {}
+function readConfig(p: string): ChatConfig | null {
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, "utf-8")) as ChatConfig;
+  } catch {
+    return null;
   }
-  return { provider: "deepseek", model: "deepseek-chat" };
+}
+
+export function loadChatConfig(cwd: string): ChatConfig {
+  const cwdCfg = readConfig(configPath(cwd));
+  const pkgCfg = readConfig(configPath(PACKAGE_ROOT));
+  if (cwdCfg && pkgCfg) {
+    return {
+      provider: cwdCfg.provider,
+      model: cwdCfg.model,
+      apiKey: cwdCfg.apiKey ?? pkgCfg.apiKey,
+    };
+  }
+  return cwdCfg ?? pkgCfg ?? { provider: "deepseek", model: "deepseek-chat" };
 }
 
 export function saveChatConfig(cwd: string, config: ChatConfig): void {
-  const dir = join(cwd, ".coagent");
+  const targetDir = existsSync(configPath(cwd)) ? cwd : PACKAGE_ROOT;
+  const dir = join(targetDir, ".coagent");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(configPath(cwd), JSON.stringify(config, null, 2) + "\n", "utf-8");
+  writeFileSync(configPath(targetDir), JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
 export function resolveApiKey(cwd: string): string | undefined {

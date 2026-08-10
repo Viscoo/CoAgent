@@ -556,7 +556,7 @@ export function startTui(options: TuiOptions): Promise<void> {
           const providers = getProviders();
           const provider = providers[cfg.provider];
           pushLine(fg(T.error, "✗") + " No API key for " + fg(T.text, cfg.provider) + ".");
-          pushLine(fg(T.textMuted, "  cwd: " + options.cwd));
+
           pushLine(fg(T.textMuted, "  Set " + (provider?.envKey ?? "API_KEY") + " env var or use:"));
           pushLine(fg(T.textMuted, "  /model " + cfg.provider + " <model> <api-key>"));
           pushLine("");
