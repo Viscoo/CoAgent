@@ -114,7 +114,7 @@ export function startTui(options: TuiOptions): Promise<void> {
 
     const chatArea = blessed.box({
       parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-4",
-      tags: true, padding: { left: 3, right: 2 },
+      tags: true, padding: { left: 3, right: 2 }, wrap: true,
       style: { bg: T.bg, fg: T.text }, mouse: true,
     });
 
@@ -574,6 +574,7 @@ export function startTui(options: TuiOptions): Promise<void> {
         const result = await chat(conversationHistory, options.cwd, (token) => {
           assistantText += token;
           logLines[thinkingLineIdx] = fg(T.secondary, "┃") + " " + fg(T.text, assistantText);
+          chatArea.setContent(logLines.join("\n"));
           screen.render();
         });
 
