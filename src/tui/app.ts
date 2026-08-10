@@ -113,19 +113,19 @@ export function startTui(options: TuiOptions): Promise<void> {
     });
 
     const chatArea = blessed.box({
-      parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-4",
+      parent: mainArea, top: 0, left: 0, width: "100%", height: "100%-3",
       tags: true, padding: { left: 3, right: 2 }, wrap: true,
       style: { bg: T.bg, fg: T.text }, mouse: true,
+      scrollable: true, scrollbar: { ch: " " },
     });
 
-    // 自维护日志缓冲：非滚动 box + 行数裁剪（tail -f 效果），
-    // 彻底绕开 blessed 滚动渲染在宽字符/中文下的 diff 错位
     let logLines: string[] = [];
     function pushLine(line: string): void {
       logLines.push(line);
-      const maxVisible = Math.max(6, (screen.height as number) - 6);
+      const maxVisible = Math.max(6, (screen.height as number) - 3);
       if (logLines.length > maxVisible) logLines.splice(0, logLines.length - maxVisible);
       chatArea.setContent(logLines.join("\n"));
+      chatArea.setScrollPerc(100);
     }
 
     for (const line of buildLogoLines(screen.width as number)) pushLine(line);
@@ -134,27 +134,27 @@ export function startTui(options: TuiOptions): Promise<void> {
     pushLine("");
 
     const inputBorder = blessed.box({
-      parent: mainArea, bottom: 2, left: 0, width: "100%", height: 1,
+      parent: mainArea, bottom: 1, left: 0, width: "100%", height: 1,
       style: { bg: T.bgElement }, tags: true,
     });
 
     const inputArea = blessed.box({
-      parent: mainArea, bottom: 2, left: 1, width: "100%-1", height: 1,
+      parent: mainArea, bottom: 1, left: 1, width: "100%-1", height: 1,
       style: { bg: T.bgElement, fg: T.text }, tags: true, padding: { left: 2, right: 2 },
     });
 
     const inputMeta = blessed.box({
-      parent: mainArea, bottom: 3, left: 1, width: "100%-1", height: 1,
-      style: { bg: T.bgElement, fg: T.textMuted }, tags: true, padding: { left: 2, right: 2 },
+      parent: mainArea, bottom: 2, left: 0, width: "100%", height: 1,
+      style: { bg: T.bgPanel, fg: T.textMuted }, tags: true, padding: { left: 3, right: 2 },
     });
 
     const footer = blessed.box({
-      parent: mainArea, bottom: 0, left: 0, width: "100%", height: 2,
+      parent: mainArea, bottom: 0, left: 0, width: "100%", height: 1,
       style: { bg: T.bg, fg: T.textMuted }, tags: true, padding: { left: 3, right: 2 },
     });
 
     const autoCompleteBox = blessed.box({
-      parent: screen, bottom: 5, left: 3, width: "45%", height: 0, hidden: true,
+      parent: screen, bottom: 4, left: 3, width: "45%", height: 0, hidden: true,
       style: { bg: T.bgMenu, fg: T.text }, border: { type: "line", fg: T.border as any },
       tags: true, label: " Commands ", padding: { left: 1, right: 1 },
     });
@@ -167,23 +167,18 @@ export function startTui(options: TuiOptions): Promise<void> {
       const cfg = loadChatConfig(options.cwd);
       const modelName = cfg.model.length > 28 ? cfg.model.slice(0, 25) + "…" : cfg.model;
       inputMeta.setContent(
-        fg(agent?.color ?? T.primary, agent?.name ?? "Build") + "  " +
-        fg(T.textMuted, "·") + "  " + fg(T.text, modelName) + "  " +
-        fg(T.textMuted, "·") + "  " + fg(T.textMuted, cfg.provider),
+        fg(T.textMuted, "  " + (agent?.name ?? "Build") + " · " + modelName),
       );
       renderFooter();
       screen.render();
       const cursorCol = 3 + displayWidth(inputBuf.slice(0, cursorPos));
       const termHeight = screen.height as number;
-      try { screen.program.cup(termHeight - 3, cursorCol); screen.program.showCursor(); } catch {}
+      try { screen.program.cup(termHeight - 2, cursorCol); screen.program.showCursor(); } catch {}
     }
 
     function renderFooter(): void {
       const shortCwd = options.cwd.split(/[/\\]/).slice(-2).join("/");
-      const left = fg(T.textMuted, shortCwd);
-      const right = fg(T.textMuted, "F2 model") + "  " + fg(T.textMuted, "Ctrl+B sidebar") +
-        "  " + fg(T.textMuted, "Ctrl+P commands") + "  " + fg(T.textMuted, "Ctrl+N new");
-      footer.setContent(left + "  " + right);
+      footer.setContent(fg(T.textMuted, shortCwd + "  ·  /help  ·  F2 model  ·  Ctrl+B  ·  Ctrl+N"));
     }
 
     function renderSidebar(): void {
@@ -575,6 +570,7 @@ export function startTui(options: TuiOptions): Promise<void> {
           assistantText += token;
           logLines[thinkingLineIdx] = fg(T.secondary, "┃") + " " + fg(T.text, assistantText);
           chatArea.setContent(logLines.join("\n"));
+          chatArea.setScrollPerc(100);
           screen.render();
         });
 
@@ -716,7 +712,7 @@ export function startTui(options: TuiOptions): Promise<void> {
     });
 
     screen.program.hideCursor();
-    screen.program.cup(screen.height as number - 3, 3);
+    screen.program.cup(screen.height as number - 2, 3);
     screen.program.showCursor();
 
     chatArea.on("click", () => { renderInput(); });
