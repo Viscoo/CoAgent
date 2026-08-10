@@ -2,18 +2,19 @@
 
 English | [中文](./README_zh.md)
 
-**CoAgent** is a multi-agent orchestration layer that supports multiple AI backends (OpenCode, Claude Code, etc.). It breaks goals into task graphs, assigns roles, manages review gates, and enables cross-backend agent collaboration via Hub.
+**CoAgent** is a multi-agent orchestration framework with a framework-agnostic Hub layer. It adapts open-source AI coding agents — **OpenCode**, **OpenClaw**, **Claude Code**, **Hermes**, and more — into a unified interface, enabling cross-framework agent collaboration, task orchestration, and collective intelligence.
 
 ## Features
 
-- **Multi-Backend Support** — Switch between OpenCode, Claude Code, or Mock via `--backend`
+- **Multi-Framework Hub Adapters** — Pluggable adapters for OpenCode, OpenClaw, Claude Code, Hermes, and any open-source agent framework
+- **Cross-Framework Collaboration** — Agents built on different frameworks communicate transparently via Hub WebSocket layer
 - **Task Orchestration** — Break goals into task graphs, execute in parallel by dependency
 - **6 Agent Roles** — Planner / Explorer / Implementer / Reviewer / Tester / Integrator
 - **Review Gates** — Code changes must pass Review and Test gates before merging
 - **Safety Policies** — Read-only roles blocked from writing, implementers scoped, conflict detection
 - **Retry Logic** — Failed tasks retry with exponential backoff, configurable retry count
-- **Hub Collective Consciousness** — Cross-backend agent communication via WebSocket
 - **TUI Interface** — OpenCode-style terminal UI with sidebar, command palette, and shortcuts
+- **Direct AI Chat** — Built-in DeepSeek / OpenAI / Anthropic API support with streaming
 
 ## Quick Start
 
@@ -21,7 +22,10 @@ English | [中文](./README_zh.md)
 npm install
 npm run build
 
-# Mock mode (default, no API key needed)
+# Interactive TUI (default — uses .coagent/chat.json config)
+coagent
+
+# Mock mode (no API key needed)
 coagent run "add a hello-world endpoint"
 
 # With OpenCode backend
@@ -29,53 +33,83 @@ coagent run "add auth middleware" --backend opencode --start-server
 
 # With Claude Code backend
 coagent run "refactor the logger" --backend claude
-
-# Interactive TUI
-coagent
 ```
 
-## Multi-Backend Architecture
+## Multi-Framework Hub Architecture
 
-CoAgent supports multiple AI backends through a unified adapter interface:
-
-```
-CoAgentAdapter (unified interface)
-  ├── SdkOpenCodeAdapter  --backend opencode   OpenCode SDK / HTTP API
-  ├── ClaudeCodeAdapter   --backend claude     Claude Code CLI (claude -p)
-  └── MockAdapter         --backend mock       Simulated (no API key needed)
-```
-
-### Backend Selection
-
-```bash
-# OpenCode — requires OpenCode CLI + API key
-export ANTHROPIC_API_KEY=sk-ant-xxxxx
-coagent run "add feature" --backend opencode --start-server
-
-# Claude Code — requires Claude Code CLI + API key
-npm install -g @anthropic-ai/claude-code
-coagent run "add feature" --backend claude
-
-# Mock — no requirements, for testing
-coagent run "add feature" --backend mock
-```
-
-### Cross-Backend Collaboration via Hub
-
-Agents using different backends can communicate through the Hub:
+CoAgent's core value is its **framework-agnostic Hub layer**. Instead of locking into one AI agent framework, CoAgent provides a unified `CoAgentAdapter` interface that any open-source agent framework can implement:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    CoAgent Hub                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
-│  │ WebSocket    │  │ Agent State  │  │ Message   │ │
-│  │ Server :4876 │  │ Store (mem)  │  │ Routing   │ │
-│  └──────┬───────┘  └──────┬───────┘  └─────┬─────┘ │
-└─────────┼─────────────────┼────────────────┼───────┘
+                    CoAgentAdapter (unified interface)
+                    ├── ensureReady()
+                    ├── createParentSession()
+                    ├── createChildSession()
+                    ├── prompt()
+                    ├── diff()
+                    └── close()
+                          │
+          ┌───────────────┼───────────────┐
+          │               │               │
+  ┌───────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+  │  OpenCode    │ │ Claude Code │ │  OpenClaw   │
+  │  Adapter     │ │  Adapter    │ │  Adapter    │
+  │  (SDK/HTTP)  │ │  (CLI)      │ │  (planned)  │
+  └──────────────┘ └─────────────┘ └─────────────┘
+  ┌──────────────┐ ┌─────────────┐ ┌─────────────┐
+  │  Hermes      │ │  DeepSeek   │ │   Mock      │
+  │  Adapter     │ │  Chat API   │ │  Adapter    │
+  │  (planned)   │ │  (built-in) │ │  (testing)  │
+  └──────────────┘ └─────────────┘ └─────────────┘
+```
+
+### Supported & Planned Adapters
+
+| Framework | Status | Backend Flag | Description |
+| --- | --- | --- | --- |
+| **OpenCode** | ✅ Implemented | `--backend opencode` | OpenCode SDK / HTTP API |
+| **Claude Code** | ✅ Implemented | `--backend claude` | Claude Code CLI (`claude -p`) |
+| **DeepSeek / OpenAI / Anthropic** | ✅ Built-in | TUI chat | Direct API calls with streaming |
+| **Mock** | ✅ Implemented | `--backend mock` | Simulated (no API key needed) |
+| **OpenClaw** | 🔜 Planned | `--backend openclaw` | Open-source agent framework adapter |
+| **Hermes** | 🔜 Planned | `--backend hermes` | Hermes agent framework adapter |
+
+### Adding a New Framework Adapter
+
+Any open-source AI agent framework can be integrated by implementing the `CoAgentAdapter` interface:
+
+```typescript
+import type { CoAgentAdapter } from "coagent";
+
+class MyFrameworkAdapter implements CoAgentAdapter {
+  readonly backend = "my-framework";
+
+  async ensureReady(): Promise<void> { /* check framework is installed */ }
+  async createParentSession(goal: string): Promise<CoAgentSession> { /* ... */ }
+  async createChildSession(parentId: string, task: TaskNode, agent: AgentSpec): Promise<CoAgentSession> { /* ... */ }
+  async prompt(sessionId: string, prompt: string): Promise<CoAgentPromptResult> { /* ... */ }
+  async diff(sessionId: string): Promise<string[]> { /* ... */ }
+  async close(): Promise<void> { /* ... */ }
+}
+```
+
+Register in `src/adapters/adapter.ts` → `createAdapter()`, add the backend type to `BackendType`, and agents using this framework can immediately collaborate with all other frameworks through the Hub.
+
+### Cross-Framework Collaboration via Hub
+
+Agents using different frameworks communicate through the Hub:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                     CoAgent Hub                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │ WebSocket    │  │ Agent State  │  │ Message       │  │
+│  │ Server :4876 │  │ Store (mem)  │  │ Routing       │  │
+│  └──────┬───────┘  └──────┬───────┘  └─────┬─────────┘  │
+└─────────┼─────────────────┼────────────────┼────────────┘
           │                 │                │
     ┌─────┴─────┐    ┌─────┴─────┐    ┌─────┴─────┐
     │ Agent A   │    │ Agent B   │    │ Agent C   │
-    │ opencode  │    │ claude    │    │ mock      │
+    │ OpenCode  │    │ Claude    │    │ OpenClaw  │
     │ planner   │    │ implement │    │ reviewer  │
     └───────────┘    └───────────┘    └───────────┘
 ```
@@ -85,54 +119,58 @@ import { startHub, AgentClient } from "coagent";
 
 const hub = await startHub({ port: 4876 });
 
+// Agents on different frameworks, same Hub
 const planner = new AgentClient({ role: "planner", backend: "opencode" });
 const implementer = new AgentClient({ role: "implementer", backend: "claude" });
 
 await planner.connect();
 await implementer.connect();
 
-// Cross-backend communication
+// Cross-framework communication
 planner.sendToAgent(implementer.id, "Please implement the registration API");
 ```
 
 ## Architecture
 
 ```
-                       ┌──────────────┐
-                       │   CLI / TUI  │
-                       └──────┬───────┘
-                              │
-                ┌─────────────▼──────────────┐
-                │     Orchestrator           │
-                │  - Task scheduling         │
-                │  - Retry with backoff      │
-                │  - Progress events         │
-                └──────┬──────────────┬──────┘
-                       │              │
-           ┌───────────▼──┐   ┌──────▼──────────┐
-           │  AgentRegistry│   │  RunLedger      │
-           │  - 6 roles    │   │  - Persistence  │
-           │  - Prompts    │   │  - .coagent/    │
-           └───────────────┘   └──────┬──────────┘
-                                      │
-           ┌───────────────┐   ┌──────▼──────────┐
-           │  MergeGate    │   │  PolicyGuard    │
-           │  - Conflicts  │   │  - Scope checks │
-           │  - Gate check │   │  - Permission   │
-           └───────────────┘   └─────────────────┘
-                       │
-          ┌────────────▼────────────────┐
-          │     CoAgentAdapter          │
-          │  ┌────────┐ ┌──────┐ ┌────┐│
-          │  │OpenCode│ │Claude│ │Mock││
-          │  └────────┘ └──────┘ └────┘│
-          └────────────────────────────┘
+                        ┌──────────────┐
+                        │   CLI / TUI  │
+                        └──────┬───────┘
+                               │
+                 ┌─────────────▼──────────────┐
+                 │     Orchestrator           │
+                 │  - Task scheduling         │
+                 │  - Retry with backoff      │
+                 │  - Progress events         │
+                 └──────┬──────────────┬──────┘
+                        │              │
+            ┌───────────▼──┐   ┌──────▼──────────┐
+            │  AgentRegistry│   │  RunLedger      │
+            │  - 6 roles    │   │  - Persistence  │
+            │  - Prompts    │   │  - .coagent/    │
+            └───────────────┘   └──────┬──────────┘
+                                       │
+            ┌───────────────┐   ┌──────▼──────────┐
+            │  MergeGate    │   │  PolicyGuard    │
+            │  - Conflicts  │   │  - Scope checks │
+            │  - Gate check │   │  - Permission   │
+            └───────────────┘   └─────────────────┘
+                        │
+           ┌────────────▼────────────────────┐
+           │     CoAgentAdapter (Hub)        │
+           │  ┌────────┐ ┌──────┐ ┌────────┐│
+           │  │OpenCode│ │Claude│ │OpenClaw││
+           │  │        │ │      │ │Hermes  ││
+           │  │        │ │      │ │Mock    ││
+           │  └────────┘ └──────┘ └────────┘│
+           └────────────────────────────────┘
 ```
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
+| `coagent` | Open interactive TUI (full-screen, OpenCode-style) |
 | `coagent init` | Create `.opencode/agents/*.md` role scaffolds |
 | `coagent plan "<goal>"` | Create task graph and run ledger (dry run) |
 | `coagent run "<goal>"` | Full orchestration: plan → execute → merge gate |
@@ -188,7 +226,7 @@ planner.sendToAgent(implementer.id, "Please implement the registration API");
 | `/plan <goal>` | Plan a task |
 | `/run <goal>` | Run a task |
 | `/status` | Show current run status |
-| `/model [name]` | Show or change model |
+| `/model [name]` | Show or change model (supports DeepSeek, OpenAI, Anthropic) |
 | `/agents [role]` | List or switch agent roles |
 | `/diff` | View file changes from last run |
 | `/config` | Show current configuration |
@@ -224,18 +262,19 @@ plan ──► explore ──► implement ──┬──► review ──┐
 
 ```
 .coagent/
+  chat.json              # AI provider config (DeepSeek/OpenAI/Anthropic)
   runs/
     <runId>/
-      run.json          # Full orchestration state
+      run.json           # Full orchestration state
 .opencode/
   agents/
-    coagent-planner.md  # Role definitions
+    coagent-planner.md   # Role definitions
     coagent-explorer.md
     coagent-implementer.md
     coagent-reviewer.md
     coagent-tester.md
     coagent-integrator.md
-  opencode.json         # Model & backend config (via /model command)
+  opencode.json          # Model & backend config (via /model command)
   tools/
     coagent_task_graph.md
     coagent_spawn.md
@@ -299,6 +338,9 @@ bun test
 - Node.js >= 22 or Bun >= 1.1
 - **OpenCode backend**: OpenCode CLI + API key
 - **Claude Code backend**: `@anthropic-ai/claude-code` CLI + API key
+- **OpenClaw backend** (planned): OpenClaw framework installed
+- **Hermes backend** (planned): Hermes framework installed
+- **TUI direct chat**: DeepSeek / OpenAI / Anthropic API key in `.coagent/chat.json`
 - **Mock backend**: No requirements
 
 ## Third-Party Licenses

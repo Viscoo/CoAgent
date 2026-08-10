@@ -1,10 +1,11 @@
-# CoAgent Hub — 多 Agent 集体意识层
+# CoAgent Hub — 多框架 Agent 集体意识层
 
-> 让机器上所有 CLI agent 窗口互相透明、共享经验、并行工作、长期演化
+> 让机器上所有 CLI agent 窗口互相透明、共享经验、并行工作、长期演化。
+> 支持 OpenCode、OpenClaw、Claude Code、Hermes 等开源框架的统一适配。
 
 ## 1. 愿景
 
-> **机器上每个 CLI 窗口都是一个自治的 agent 实例。它们通过一个「集体意识层」互相看见、共享知识、并行工作。随着使用，每个 agent 积累经验、形成角色个性，最终成为用户的智能助手集群。**
+> **机器上每个 CLI 窗口都是一个自治的 agent 实例。无论底层使用 OpenCode、Claude Code、OpenClaw 还是 Hermes，它们通过一个「集体意识层」互相看见、共享知识、并行工作。随着使用，每个 agent 积累经验、形成角色个性，最终成为用户的智能助手集群。**
 
 这与现有的 agent 框架（AutoGen、CrewAI、LangGraph）有本质区别：
 
@@ -13,6 +14,7 @@
 | 一个进程内编排多个 agent | 多进程独立运行，通过 Hub 松散耦合 |
 | 中央调度器控制所有 agent | 无中心调度，agent 自治 |
 | agent 之间黑盒调用 | 全透明 —— 任何 agent 可看到其他 agent 的状态 |
+| 锁定单一框架 | 框架无关 —— OpenCode/Claude/OpenClaw/Hermes 自由混用 |
 | 知识不跨 session | 共享经验库，一次解决全局受益 |
 | agent 无身份/角色演化 | agent 随时间积累 profile，可手动配置角色 |
 
@@ -50,7 +52,6 @@
 │  │ WebSocket    │  │ Agent 状态   │  │ 共享知识库   │ │
 │  │ 服务 :4876   │  │ 存储 (内存)  │  │ (文件/SQLite)│ │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘ │
-│         │                 │                 │          │
 │  ┌──────┴──────────────────┴──────────────────┴───────┐ │
 │  │             消息路由 & 事件分发                     │ │
 │  └──────────────────────┬─────────────────────────────┘ │
@@ -63,12 +64,12 @@
     │ CLI 窗口1 │     │ CLI 窗口2 │      │ CLI 窗口3 │
     │ planner   │     │ implement│      │ reviewer  │
     │ 项目 A    │     │ 项目 B   │      │ 项目 A    │
-    └───────────┘     └──────────┘      └──────────┘
-         │                  │                  │
-    ┌────┴────┐        ┌────┴────┐       ┌────┴────┐
-    │OpenCode │        │OpenCode │       │OpenCode │
-    │ session │        │ session │       │ session │
-    └─────────┘        └─────────┘       └─────────┘
+    └────┬─────┘     └────┬─────┘      └────┬─────┘
+         │                │                  │
+    ┌────┴────┐      ┌────┴────┐       ┌────┴────┐
+    │OpenCode │      │Claude   │       │OpenClaw │
+    │ session │      │Code CLI │       │ session │
+    └─────────┘      └─────────┘       └─────────┘
 ```
 
 ### 组件说明
@@ -226,10 +227,31 @@ interface KnowledgeEntry {
 
 | 系统 | 关系 |
 |------|------|
-| **OpenCode** | CoAgent 底层引擎，不变。Hub 不修改 OpenCode 代码 |
+| **OpenCode** | CoAgent 适配层之一，通过 SdkOpenCodeAdapter 接入。Hub 不修改 OpenCode 代码 |
+| **Claude Code** | CoAgent 适配层之一，通过 ClaudeCodeAdapter 接入 Claude CLI |
+| **OpenClaw** | 规划中适配器。实现 CoAgentAdapter 接口即可接入 Hub |
+| **Hermes** | 规划中适配器。实现 CoAgentAdapter 接口即可接入 Hub |
 | **CoAgent Orchestrator** | 互补。Orchestrator 是任务编排，Hub 是 agent 之间的人肉/agent 通信层 |
 | **A2A (Agent2Agent)** | 未来可兼容。Hub 可暴露 A2A Agent Card，让外部 agent 与内部 agent 通信 |
 | **MCP** | 不变。agent 的工具仍通过 MCP 调用 |
+
+### 框架适配接口
+
+所有框架通过统一的 `CoAgentAdapter` 接口接入 Hub：
+
+```typescript
+interface CoAgentAdapter {
+  readonly backend: string;           // "opencode" | "claude" | "openclaw" | "hermes" | ...
+  ensureReady(): Promise<void>;
+  createParentSession(goal: string): Promise<CoAgentSession>;
+  createChildSession(parentId: string, task: TaskNode, agent: AgentSpec): Promise<CoAgentSession>;
+  prompt(sessionId: string, prompt: string): Promise<CoAgentPromptResult>;
+  diff(sessionId: string): Promise<string[]>;
+  close(): Promise<void>;
+}
+```
+
+新增框架只需实现此接口并在 `createAdapter()` 中注册，即可通过 Hub 与所有其他框架的 Agent 协作。
 
 ## 8. 设计原则
 

@@ -1,6 +1,6 @@
 # CoAgent Implementation Guide
 
-CoAgent v0.2 keeps OpenCode as the execution engine and adds a local orchestration layer for planning, child sessions, role prompts, audit logs, policy checks, merge gates, task retries, and progress reporting.
+CoAgent v0.2 is a multi-framework agent orchestration layer. It provides a framework-agnostic Hub that adapts open-source AI coding agents — OpenCode, OpenClaw, Claude Code, Hermes, and more — into a unified `CoAgentAdapter` interface for task orchestration, role-based sessions, audit logs, policy checks, merge gates, retries, and cross-framework collaboration.
 
 ## Runtime Flow
 
@@ -42,10 +42,11 @@ Failed tasks trigger exponential backoff: 2s, 4s, 8s (configurable).
 ## Extension Points
 
 - **Task graph planning**: Extend `createTaskGraph()` in `src/core/task-graph.ts` to support dynamic task generation or LLM-driven planning.
-- **OpenCode adapter**: Add alternative adapters in `src/adapters/` (e.g., HTTP-only, mock, or CLI-based).
+- **Framework adapters**: Implement `CoAgentAdapter` in `src/adapters/` to support new frameworks (OpenClaw, Hermes, etc.). Register in `createAdapter()` and add to `BackendType`.
 - **Role templates**: Add agent specs in `src/core/agent-registry.ts`. Each role gets a prompt template and `.opencode/agents` definition.
 - **Policy checks**: Add rules in `src/core/policy-guard.ts`. Violations prevent merge.
 - **Custom tools**: Promote `.opencode/tools/*.md` contracts into real OpenCode custom tool bindings.
+- **Hub integration**: Any adapter that implements `CoAgentAdapter` automatically works with the Hub for cross-framework agent communication.
 
 ## Connascence Points
 
@@ -53,5 +54,7 @@ If you change one of these, check the others:
 
 - `src/core/types.ts` — shared types across all modules.
 - `src/core/orchestrator.ts` — depends on all core modules and adapter interface.
+- `src/adapters/adapter.ts` — defines `CoAgentAdapter` interface and `createAdapter()` factory; all framework adapters must conform.
 - `src/adapters/opencode-adapter.ts` — must match the real OpenCode SDK API surface.
+- `src/adapters/claude-adapter.ts` — must match the Claude Code CLI interface.
 - `.opencode/agents/*.md` — must match the agent specs in `agent-registry.ts`.
