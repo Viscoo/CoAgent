@@ -110,7 +110,7 @@ const bashTool: ToolDef = {
 				timeout: 30000,
 				maxBuffer: 1024 * 1024,
 				stdio: ["pipe", "pipe", "pipe"],
-				shell: isWin ? "powershell.exe" : true,
+				shell: isWin ? "powershell.exe" : "/bin/sh",
 			});
 			return { content: out.trim() || "(no output)" };
 		} catch (err: any) {
