@@ -6,15 +6,18 @@ English | [中文](./README_zh.md)
 
 ## Features
 
-- **Multi-Framework Hub Adapters** — Pluggable adapters for OpenCode, OpenClaw, Claude Code, Hermes, and any open-source agent framework
-- **Cross-Framework Collaboration** — Agents built on different frameworks communicate transparently via Hub WebSocket layer
+- **Multi-Framework Hub Adapters** — Pluggable adapters for OpenCode, Claude Code, Hermes, and any open-source agent framework
+- **Agent Tool Calling** — Built-in tools (read/write/edit/bash/grep) with OpenAI function calling agent loop
+- **Skills & MCP** — Load skills from `.coagent/skills/*/SKILL.md`, connect MCP servers via stdio
+- **Cross-Framework Collaboration** — Agents communicate transparently via Hub WebSocket layer
+- **Multi-CLI Messaging** — `/msg` and `/broadcast` commands to message peer agents across TUI windows
 - **Task Orchestration** — Break goals into task graphs, execute in parallel by dependency
 - **6 Agent Roles** — Planner / Explorer / Implementer / Reviewer / Tester / Integrator
 - **Review Gates** — Code changes must pass Review and Test gates before merging
 - **Safety Policies** — Read-only roles blocked from writing, implementers scoped, conflict detection
 - **Retry Logic** — Failed tasks retry with exponential backoff, configurable retry count
-- **TUI Interface** — OpenCode-style terminal UI with sidebar, command palette, and shortcuts
-- **Direct AI Chat** — Built-in DeepSeek / OpenAI / Anthropic API support with streaming
+- **pi-tui Interface** — Differential-rendering TUI powered by `@earendil-works/pi-tui` with slash command autocomplete
+- **Direct AI Chat** — Built-in Volcengine ARK / DeepSeek / OpenAI / Anthropic API support with streaming
 
 ## Quick Start
 
@@ -68,10 +71,10 @@ CoAgent's core value is its **framework-agnostic Hub layer**. Instead of locking
 | --- | --- | --- | --- |
 | **OpenCode** | ✅ Implemented | `--backend opencode` | OpenCode SDK / HTTP API |
 | **Claude Code** | ✅ Implemented | `--backend claude` | Claude Code CLI (`claude -p`) |
+| **Hermes** | ✅ Implemented | `--backend hermes` | Hermes CLI adapter |
+| **Volcengine ARK** | ✅ Built-in | TUI chat | OpenAI-compatible coding plan endpoint |
 | **DeepSeek / OpenAI / Anthropic** | ✅ Built-in | TUI chat | Direct API calls with streaming |
 | **Mock** | ✅ Implemented | `--backend mock` | Simulated (no API key needed) |
-| **OpenClaw** | 🔜 Planned | `--backend openclaw` | Open-source agent framework adapter |
-| **Hermes** | 🔜 Planned | `--backend hermes` | Hermes agent framework adapter |
 
 ### Adding a New Framework Adapter
 
@@ -226,8 +229,11 @@ planner.sendToAgent(implementer.id, "Please implement the registration API");
 | `/plan <goal>` | Plan a task |
 | `/run <goal>` | Run a task |
 | `/status` | Show current run status |
-| `/model [name]` | Show or change model (supports DeepSeek, OpenAI, Anthropic) |
+| `/model [name]` | Show or change model (supports ARK, DeepSeek, OpenAI, Anthropic) |
 | `/agents [role]` | List or switch agent roles |
+| `/peers` | Show other agents connected to Hub |
+| `/msg <peer> <text>` | Send a message to a peer agent |
+| `/broadcast <text>` | Broadcast a message to all peers |
 | `/diff` | View file changes from last run |
 | `/config` | Show current configuration |
 | `/compact` | Compact conversation history |
@@ -301,6 +307,53 @@ Tasks that exhaust retries are marked `failed`; dependent tasks are blocked.
 - Merge is blocked when review or test gates fail.
 - File ownership conflicts between multiple implementers require integrator resolution.
 
+## Agent Tools & Skills
+
+The TUI agent loop supports tool calling, skills, and MCP extensions:
+
+### Built-in Tools
+
+| Tool | Description |
+| --- | --- |
+| `read` | Read file contents (workspace-sandboxed) |
+| `write` | Write file contents |
+| `edit` | String replacement in files (unique match required) |
+| `bash` | Execute shell commands (Git Bash on Windows, /bin/sh on Unix) |
+| `grep` | Search file contents with regex |
+
+### Skills
+
+Place `SKILL.md` files in `.coagent/skills/<name>/` or `.pi/agent/skills/<name>/`. Skills are loaded at startup and injected into the agent's system prompt.
+
+### MCP Servers
+
+Configure MCP servers in `.coagent/mcp.json`:
+
+```json
+{
+  "servers": [
+    { "name": "my-server", "command": "npx", "args": ["-y", "@mcp/server"] }
+  ]
+}
+```
+
+## Multi-CLI Communication
+
+Start the Hub in one terminal, then open multiple CoAgent TUI windows — they auto-connect and can message each other:
+
+```bash
+# Terminal 1: start Hub
+coagent hub
+
+# Terminal 2, 3, ...: start CoAgent (auto-connects to Hub)
+coagent
+
+# In any TUI window:
+/peers                    # list online agents
+/msg BraveApple hello     # send direct message
+/broadcast standup time   # broadcast to all
+```
+
 ## Examples
 
 CoAgent provides 7 progressive examples — no AI backend required for most of them.
@@ -338,9 +391,8 @@ bun test
 - Node.js >= 22 or Bun >= 1.1
 - **OpenCode backend**: OpenCode CLI + API key
 - **Claude Code backend**: `@anthropic-ai/claude-code` CLI + API key
-- **OpenClaw backend** (planned): OpenClaw framework installed
-- **Hermes backend** (planned): Hermes framework installed
-- **TUI direct chat**: DeepSeek / OpenAI / Anthropic API key in `.coagent/chat.json`
+- **Hermes backend**: Hermes CLI installed
+- **TUI direct chat**: Volcengine ARK / DeepSeek / OpenAI / Anthropic API key in `.coagent/chat.json`
 - **Mock backend**: No requirements
 
 ## Third-Party Licenses

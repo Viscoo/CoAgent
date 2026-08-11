@@ -6,15 +6,18 @@
 
 ## 特性
 
-- **多框架 Hub 适配** — 可插拔适配器支持 OpenCode、OpenClaw、Claude Code、Hermes 等任意开源 Agent 框架
+- **多框架 Hub 适配** — 可插拔适配器支持 OpenCode、Claude Code、Hermes 等任意开源 Agent 框架
+- **Agent 工具调用** — 内置工具（read/write/edit/bash/grep），OpenAI function calling agent loop
+- **技能与 MCP** — 从 `.coagent/skills/*/SKILL.md` 加载技能，通过 stdio 连接 MCP 服务器
 - **跨框架协作** — 不同框架构建的 Agent 通过 Hub WebSocket 层透明通信
+- **多 CLI 通信** — `/msg` 和 `/broadcast` 命令跨 TUI 窗口发送消息给 peer agent
 - **任务编排** — 将目标分解为任务图，按依赖关系并行执行
 - **6 种角色** — Planner / Explorer / Implementer / Reviewer / Tester / Integrator
 - **审查关卡** — 代码变更需通过 Review 和 Test 关卡才能合并
 - **安全策略** — 只读角色禁止写入，实现者作用域限制，冲突自动检测
 - **重试机制** — 失败任务指数退避重试，可配置重试次数
-- **TUI 界面** — 全屏终端交互界面，OpenCode 风格布局
-- **直接 AI 对话** — 内置 DeepSeek / OpenAI / Anthropic API 流式支持
+- **pi-tui 界面** — 基于 `@earendil-works/pi-tui` 差分渲染 TUI，支持斜杠命令自动补全
+- **直接 AI 对话** — 内置火山方舟 ARK / DeepSeek / OpenAI / Anthropic API 流式支持
 
 ## 快速开始
 
