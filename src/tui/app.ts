@@ -22,6 +22,8 @@ import { MockAdapter } from "../adapters/mock-adapter.js";
 import { HubBridge } from "../hub/bridge.js";
 import { chat, loadChatConfig, saveChatConfig, resolveApiKey, getProviders, type ChatMessage, runAgent } from "./chat-client.js";
 import { resolveModelInput, findConfigFile } from "./model-config.js";
+import { loadSkills, buildSkillsSystemPrompt } from "./skills.js";
+import { loadMcpConfig, McpClient, type McpServerConfig } from "./mcp.js";
 
 const VERSION = "0.2.0";
 
@@ -505,6 +507,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
 	}
 
 	async function runGoal(goal: string): Promise<void> {
+		const skills = loadSkills(options.cwd);
+		const skillsPrompt = buildSkillsSystemPrompt(skills);
+		if (skillsPrompt && !conversationHistory.some((m) => m.role === "system" && m.content.includes("Available Skills"))) {
+			conversationHistory.unshift({ role: "system", content: skillsPrompt + "\n\nYou are a coding agent with tools: read, write, edit, bash, grep. Use them to help the user. When done, respond directly." });
+		}
 		conversationHistory.push({ role: "user", content: goal });
 
 		try {
