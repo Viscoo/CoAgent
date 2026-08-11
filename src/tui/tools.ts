@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 
 export interface ToolDef {
 	name: string;
@@ -23,6 +23,19 @@ function safePath(p: string, cwd: string): string {
 	}
 	return normalized;
 }
+
+function findGitBash(): string | null {
+	if (process.platform !== "win32") return null;
+	try {
+		const r = spawnSync("where", ["bash"], { encoding: "utf-8", timeout: 2000 });
+		if (r.status === 0 && r.stdout.trim()) {
+			return r.stdout.trim().split(/\r?\n/)[0]!;
+		}
+	} catch {}
+	return null;
+}
+
+const GIT_BASH = findGitBash();
 
 const readTool: ToolDef = {
 	name: "read",
@@ -93,7 +106,7 @@ const editTool: ToolDef = {
 
 const bashTool: ToolDef = {
 	name: "bash",
-	description: "Execute a shell command in the workspace directory. Returns stdout+stderr.",
+	description: "Execute a shell command in the workspace directory. Returns stdout+stderr. On Windows, Git Bash is used if available (ls, wc, grep work).",
 	parameters: {
 		type: "object",
 		properties: {
@@ -104,13 +117,14 @@ const bashTool: ToolDef = {
 	async execute(args, cwd) {
 		try {
 			const isWin = process.platform === "win32";
+			const shell = isWin ? (GIT_BASH ?? "powershell.exe") : "/bin/sh";
 			const out = execSync(String(args.command), {
 				cwd,
 				encoding: "utf-8",
 				timeout: 30000,
 				maxBuffer: 1024 * 1024,
 				stdio: ["pipe", "pipe", "pipe"],
-				shell: isWin ? "powershell.exe" : "/bin/sh",
+				shell,
 			});
 			return { content: out.trim() || "(no output)" };
 		} catch (err: any) {

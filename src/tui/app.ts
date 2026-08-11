@@ -580,7 +580,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
 			const thinkingText = addText(C.muted("  ⠋ Thinking…"));
 
+			let activeText: Text = thinkingText;
 			let assistantText = "";
+			let needNewText = false;
 			let lastRender = 0;
 
 			const result = await runAgent(conversationHistory, options.cwd, undefined, {
@@ -589,12 +591,22 @@ export async function startTui(options: TuiOptions): Promise<void> {
 					const now = Date.now();
 					if (now - lastRender < 60) return;
 					lastRender = now;
-					thinkingText.setText(C.secondary("● ") + C.text(assistantText));
+					if (needNewText) {
+						activeText = addText(C.secondary("● ") + C.text(assistantText));
+						needNewText = false;
+					} else {
+						activeText.setText(C.secondary("● ") + C.text(assistantText));
+					}
 					tui.requestRender();
 				},
 				onToolCall: (call) => {
+					if (assistantText === "" && activeText === thinkingText) {
+						thinkingText.setText("");
+					}
+					assistantText = "";
 					const argPreview = call.arguments.length > 60 ? call.arguments.slice(0, 60) + "…" : call.arguments;
 					addText(C.warning("⚙ ") + C.text(call.name) + C.muted(argPreview));
+					needNewText = true;
 					tui.requestRender();
 				},
 				onToolResult: (call, res) => {
