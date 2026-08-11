@@ -241,7 +241,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 		const line = text.trim();
 		if (!line) return;
 		messageCount++;
-		addText(C.primary("▶ ") + C.text(line));
+		addText(C.primary("▶ " + line));
 
 		if (isProcessing) {
 			pendingQueue.push(line);
@@ -254,7 +254,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 			while (pendingQueue.length > 0) {
 				const next = pendingQueue.shift()!;
 				messageCount++;
-				addText(C.primary("▶ ") + C.text(next));
+				addText(C.primary("▶ " + next));
 				await handleCommand(next);
 			}
 		} finally {
