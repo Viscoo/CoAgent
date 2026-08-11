@@ -19,6 +19,13 @@ export interface ChatProvider {
 }
 
 const PROVIDERS: Record<string, ChatProvider> = {
+  ark: {
+    id: "ark",
+    name: "Volcengine ARK",
+    apiUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+    envKey: "ARK_API_KEY",
+    models: ["auto"],
+  },
   deepseek: {
     id: "deepseek",
     name: "DeepSeek",

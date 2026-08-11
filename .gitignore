@@ -1,8 +1,10 @@
 dist/
 node_modules/
 .coagent/runs/
+.coagent/chat.json
 .env
 *.log
+ref/
 
 # OpenCode source (auto-downloaded by postinstall)
 .opencode-source/

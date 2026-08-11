@@ -16,6 +16,8 @@
     "postinstall": "node scripts/setup-opencode.mjs"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.1",
+    "@earendil-works/pi-ai": "^0.84.1",
     "@earendil-works/pi-tui": "^0.84.1",
     "adm-zip": "^0.5.18",
     "chalk": "^5.6.2",
