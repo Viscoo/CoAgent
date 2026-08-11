@@ -20,7 +20,7 @@ import { matchSlashCommands, resolveCommand, SLASH_COMMANDS } from "./commands.j
 import { Orchestrator } from "../core/orchestrator.js";
 import { MockAdapter } from "../adapters/mock-adapter.js";
 import { HubBridge } from "../hub/bridge.js";
-import { chat, loadChatConfig, saveChatConfig, resolveApiKey, getProviders, type ChatMessage } from "./chat-client.js";
+import { chat, loadChatConfig, saveChatConfig, resolveApiKey, getProviders, type ChatMessage, runAgent } from "./chat-client.js";
 import { resolveModelInput, findConfigFile } from "./model-config.js";
 
 const VERSION = "0.2.0";
@@ -526,13 +526,25 @@ export async function startTui(options: TuiOptions): Promise<void> {
 			let assistantText = "";
 			let lastRender = 0;
 
-			const result = await chat(conversationHistory, options.cwd, (token) => {
-				assistantText += token;
-				const now = Date.now();
-				if (now - lastRender < 60) return;
-				lastRender = now;
-				thinkingText.setText(C.secondary("● ") + C.text(assistantText));
-				tui.requestRender();
+			const result = await runAgent(conversationHistory, options.cwd, undefined, {
+				onText: (token) => {
+					assistantText += token;
+					const now = Date.now();
+					if (now - lastRender < 60) return;
+					lastRender = now;
+					thinkingText.setText(C.secondary("● ") + C.text(assistantText));
+					tui.requestRender();
+				},
+				onToolCall: (call) => {
+					addText(C.warning("⚙ ") + C.text(call.name) + C.muted("(" + call.arguments + ")"));
+					tui.requestRender();
+				},
+				onToolResult: (call, res) => {
+					const preview = res.content.length > 200 ? res.content.slice(0, 200) + "…" : res.content;
+					const icon = res.isError ? C.error("✗") : C.success("✓");
+					addText("  " + icon + " " + C.muted(call.name + ": " + preview));
+					tui.requestRender();
+				},
 			});
 
 			if (!result) {
