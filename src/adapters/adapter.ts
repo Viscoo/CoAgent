@@ -23,7 +23,7 @@ export interface CoAgentAdapter {
   close(): Promise<void>;
 }
 
-export type BackendType = "opencode" | "claude" | "mock";
+export type BackendType = "opencode" | "claude" | "hermes" | "mock";
 
 export interface AdapterFactoryOptions {
   cwd: string;
@@ -44,6 +44,11 @@ export function createAdapter(options: AdapterFactoryOptions): CoAgentAdapter {
       });
     case "claude":
       return new (require("./claude-adapter.js") as typeof import("./claude-adapter.js")).ClaudeCodeAdapter({
+        cwd: options.cwd,
+        model: options.model,
+      });
+    case "hermes":
+      return new (require("./hermes-adapter.js") as typeof import("./hermes-adapter.js")).HermesAdapter({
         cwd: options.cwd,
         model: options.model,
       });

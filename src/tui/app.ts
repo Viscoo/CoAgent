@@ -188,6 +188,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
 			if (bridge.connected) {
 				hubStatus = "online";
 				bridge.onChange(() => renderStatus());
+				bridge.client?.on("message", (msg: { from: string; text: string }) => {
+					addText(C.info("◀ ") + C.muted("[from " + msg.from + "] ") + C.text(msg.text));
+					addBlank();
+					tui.requestRender();
+				});
 				addText(C.success("🧠") + " Hub connected as " + C.text(bridge.selfName) +
 					" — " + C.muted(bridge.peerList.length + " peer(s) online"));
 				addBlank();
@@ -443,6 +448,51 @@ export async function startTui(options: TuiOptions): Promise<void> {
 					}
 				}
 			}
+			addBlank();
+			return;
+		}
+
+		if (cmd?.name === "/msg") {
+			if (!hubBridge?.connected) {
+				addText(C.error("✗") + " Not connected to Hub. Start it with " + C.text("coagent hub"));
+				addBlank();
+				return;
+			}
+			const parts = rest.split(/\s+/);
+			const peerName = parts[0];
+			const msgText = parts.slice(1).join(" ");
+			if (!peerName || !msgText) {
+				addText(C.error("✗") + " Usage: /msg <peer-name> <message>");
+				addBlank();
+				return;
+			}
+			const peers = hubBridge.peerList;
+			const peer = peers.find((p) => p.name === peerName || p.id === peerName);
+			if (!peer) {
+				addText(C.error("✗") + " Peer not found: " + peerName);
+				addText(C.muted("  Use /peers to list connected agents"));
+				addBlank();
+				return;
+			}
+			hubBridge.client?.sendToAgent(peer.id, msgText);
+			addText(C.primary("▶ ") + C.muted("[to " + peer.name + "] ") + C.text(msgText));
+			addBlank();
+			return;
+		}
+
+		if (cmd?.name === "/broadcast") {
+			if (!hubBridge?.connected) {
+				addText(C.error("✗") + " Not connected to Hub.");
+				addBlank();
+				return;
+			}
+			if (!rest) {
+				addText(C.error("✗") + " Usage: /broadcast <message>");
+				addBlank();
+				return;
+			}
+			hubBridge.client?.broadcast(rest);
+			addText(C.primary("▶ ") + C.muted("[broadcast] ") + C.text(rest));
 			addBlank();
 			return;
 		}
