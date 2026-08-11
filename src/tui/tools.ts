@@ -103,12 +103,14 @@ const bashTool: ToolDef = {
 	},
 	async execute(args, cwd) {
 		try {
+			const isWin = process.platform === "win32";
 			const out = execSync(String(args.command), {
 				cwd,
 				encoding: "utf-8",
 				timeout: 30000,
 				maxBuffer: 1024 * 1024,
 				stdio: ["pipe", "pipe", "pipe"],
+				shell: isWin ? "powershell.exe" : true,
 			});
 			return { content: out.trim() || "(no output)" };
 		} catch (err: any) {

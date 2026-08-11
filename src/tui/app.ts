@@ -593,13 +593,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
 					tui.requestRender();
 				},
 				onToolCall: (call) => {
-					addText(C.warning("⚙ ") + C.text(call.name) + C.muted("(" + call.arguments + ")"));
+					const argPreview = call.arguments.length > 60 ? call.arguments.slice(0, 60) + "…" : call.arguments;
+					addText(C.warning("⚙ ") + C.text(call.name) + C.muted(argPreview));
 					tui.requestRender();
 				},
 				onToolResult: (call, res) => {
-					const preview = res.content.length > 200 ? res.content.slice(0, 200) + "…" : res.content;
 					const icon = res.isError ? C.error("✗") : C.success("✓");
-					addText("  " + icon + " " + C.muted(call.name + ": " + preview));
+					const lines = res.content.split("\n");
+					let preview: string;
+					if (lines.length <= 3) {
+						preview = res.content.length > 150 ? res.content.slice(0, 150) + "…" : res.content;
+					} else {
+						preview = lines.slice(0, 3).join("\n") + `\n… (${lines.length} lines)`;
+					}
+					addText("  " + icon + " " + C.muted(preview));
 					tui.requestRender();
 				},
 			});
