@@ -241,9 +241,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 		const line = text.trim();
 		if (!line) return;
 		messageCount++;
-		const agent = AGENT_ROLES.find((a) => a.id === currentAgentRole);
-		addText((agent?.color ?? C.primary)("┃") + " " + C.text(line));
-		addBlank();
+		addText(C.primary("▶ ") + C.text(line));
 
 		if (isProcessing) {
 			pendingQueue.push(line);
@@ -256,9 +254,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 			while (pendingQueue.length > 0) {
 				const next = pendingQueue.shift()!;
 				messageCount++;
-				const ag = AGENT_ROLES.find((a) => a.id === currentAgentRole);
-				addText((ag?.color ?? C.primary)("┃") + " " + C.text(next));
-				addBlank();
+				addText(C.primary("▶ ") + C.text(next));
 				await handleCommand(next);
 			}
 		} finally {
@@ -535,14 +531,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
 				const now = Date.now();
 				if (now - lastRender < 60) return;
 				lastRender = now;
-				thinkingText.setText(C.secondary("┃") + " " + C.text(assistantText));
+				thinkingText.setText(C.secondary("● ") + C.text(assistantText));
 				tui.requestRender();
 			});
 
 			if (!result) {
 				thinkingText.setText(C.error("✗") + " Empty response from API.");
 			} else {
-				thinkingText.setText(C.secondary("┃") + " " + C.text(result));
+				thinkingText.setText(C.secondary("● ") + C.text(result));
 			}
 
 			conversationHistory.push({ role: "assistant", content: result });
