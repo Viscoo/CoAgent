@@ -2,6 +2,7 @@ import { AgentRegistry } from "./agent-registry.js";
 import { MergeGate, buildRiskReport, createEmptyMergePlan } from "./merge-gate.js";
 import { PolicyGuard } from "./policy-guard.js";
 import { RunLedger } from "./run-ledger.js";
+import { SecurityGuard, type SecurityConfig } from "./security.js";
 import { createTaskGraph, getReadyTasks, summarizeRun, updateTaskStatus } from "./task-graph.js";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
@@ -27,6 +28,7 @@ export class Orchestrator {
   private readonly ledger: RunLedger;
   private readonly mergeGate: MergeGate;
   private readonly policyGuard: PolicyGuard;
+  private readonly securityGuard: SecurityGuard;
 
   constructor(
     private readonly options: OrchestratorOptions,
@@ -34,8 +36,9 @@ export class Orchestrator {
   ) {
     this.registry = new AgentRegistry();
     this.ledger = new RunLedger(options.cwd);
+    this.securityGuard = new SecurityGuard(options.cwd, options.securityConfig);
     this.mergeGate = new MergeGate();
-    this.policyGuard = new PolicyGuard();
+    this.policyGuard = new PolicyGuard(this.securityGuard);
   }
 
   async init(): Promise<string[]> {
@@ -155,7 +158,13 @@ export class Orchestrator {
     task: TaskNode,
   ): Promise<{ task: TaskNode; agentRun: AgentRun }> {
     const spec = this.registry.get(task.role);
-    const prompt = this.registry.buildPrompt(task, run.goal);
+    let prompt = this.registry.buildPrompt(task, run.goal);
+
+    if (this.options.ragEnabled) {
+      const rag = new (await import("./rag.js")).RAGKnowledgeBase(this.options.cwd);
+      prompt = rag.injectIntoPrompt(prompt, task.title + " " + task.description);
+    }
+
     const maxRetries = this.options.maxRetries ?? 2;
     const retryDelay = this.options.retryDelayMs ?? 2000;
     let lastError: Error | undefined;
@@ -197,12 +206,14 @@ export class Orchestrator {
           throw new Error(violations.map((v) => v.message).join(" "));
         }
 
+        const sanitizedSummary = this.policyGuard.redact(result.summary ?? "");
+
         const completedAgentRun: AgentRun = {
           ...agentRun,
           status: "completed",
           childSessionId: child.id,
           sessionId: result.sessionId,
-          summary: result.summary,
+          summary: sanitizedSummary,
           diffFiles,
           endedAt: nowIso(),
         };

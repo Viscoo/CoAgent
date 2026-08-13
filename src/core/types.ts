@@ -1,4 +1,5 @@
 import type { CoAgentAdapter } from "../adapters/adapter.js";
+import type { SecurityConfig } from "./security.js";
 import { randomBytes } from "node:crypto";
 
 export const AGENT_ROLES = [
@@ -166,6 +167,8 @@ export interface OrchestratorOptions {
   retryDelayMs?: number;
   onProgress?: (event: ProgressEvent) => void;
   adapter?: CoAgentAdapter;
+  securityConfig?: Partial<SecurityConfig>;
+  ragEnabled?: boolean;
 }
 
 export interface ProgressEvent {

@@ -14,10 +14,14 @@ English | [中文](./README_zh.md)
 - **Task Orchestration** — Break goals into task graphs, execute in parallel by dependency
 - **6 Agent Roles** — Planner / Explorer / Implementer / Reviewer / Tester / Integrator
 - **Review Gates** — Code changes must pass Review and Test gates before merging
+- **RAG Knowledge Base** — TF-IDF document indexing, vector retrieval, automatic context injection into agent prompts
+- **Private Model Deployment** — Support for on-prem / local LLM endpoints (Ollama, vLLM, custom OpenAI-compatible servers)
+- **Security Compliance** — Data exfiltration prevention, permission-level enforcement, audit trail with integrity verification
+- **Quality Assurance** — Merge gate conflict detection, risk report generation, gate enforcement visible in TUI
 - **Safety Policies** — Read-only roles blocked from writing, implementers scoped, conflict detection
 - **Retry Logic** — Failed tasks retry with exponential backoff, configurable retry count
 - **pi-tui Interface** — Differential-rendering TUI powered by `@earendil-works/pi-tui` with slash command autocomplete
-- **Direct AI Chat** — Built-in Volcengine ARK / DeepSeek / OpenAI / Anthropic API support with streaming
+- **Direct AI Chat** — Built-in Volcengine ARK / DeepSeek / OpenAI / Anthropic / Local / Ollama / vLLM API support with streaming
 
 ## Quick Start
 
@@ -236,6 +240,9 @@ planner.sendToAgent(implementer.id, "Please implement the registration API");
 | `/broadcast <text>` | Broadcast a message to all peers |
 | `/diff` | View file changes from last run |
 | `/config` | Show current configuration |
+| `/rag [index\|search\|clear\|stats]` | Manage RAG knowledge base |
+| `/audit [date]` | View audit log with integrity verification |
+| `/security` | Show security configuration |
 | `/compact` | Compact conversation history |
 | `/exit` | Exit CoAgent |
 
@@ -268,7 +275,12 @@ plan ──► explore ──► implement ──┬──► review ──┐
 
 ```
 .coagent/
-  chat.json              # AI provider config (DeepSeek/OpenAI/Anthropic)
+  chat.json              # AI provider config (DeepSeek/OpenAI/Anthropic/Local/Ollama/vLLM)
+  security.json          # Security & compliance configuration
+  rag/
+    index.json           # RAG knowledge base index
+  audit/
+    audit-YYYY-MM-DD.log # Audit trail logs
   runs/
     <runId>/
       run.json           # Full orchestration state
@@ -306,6 +318,85 @@ Tasks that exhaust retries are marked `failed`; dependent tasks are blocked.
 - Implementers are scoped to assigned files — changes outside scope trigger policy violations.
 - Merge is blocked when review or test gates fail.
 - File ownership conflicts between multiple implementers require integrator resolution.
+
+## RAG Knowledge Base
+
+CoAgent includes a built-in RAG (Retrieval-Augmented Generation) knowledge base for context-aware agent responses:
+
+```bash
+# In TUI:
+/rag index              # Index current workspace
+/rag index ./docs       # Index specific directory
+/rag search "auth flow" # Search knowledge base
+/rag stats              # Show index statistics
+/rag clear              # Clear index
+```
+
+- **TF-IDF vector retrieval** — No external dependencies, lightweight in-process search
+- **Automatic context injection** — Relevant knowledge is injected into agent prompts during orchestration
+- **Multi-language support** — Indexes `.md`, `.txt`, `.ts`, `.js`, `.py`, `.json`, `.yaml`, and more
+- **Chunked indexing** — Documents split into 512-token chunks with 64-token overlap
+
+## Private Model Deployment
+
+CoAgent supports on-premises / private LLM deployment for data-sensitive environments:
+
+| Provider | Endpoint | Use Case |
+| --- | --- | --- |
+| `local` | `http://localhost:8080/v1` | Custom OpenAI-compatible server |
+| `ollama` | `http://localhost:11434/v1` | Ollama local runtime |
+| `vllm` | `http://localhost:8000/v1` | vLLM private deployment |
+
+```bash
+# Configure private deployment
+/model local custom http://your-server:8080/v1
+/model ollama qwen2.5:7b
+/model vllm custom http://internal-gpu:8000/v1 your-key
+```
+
+Custom `apiUrl` can be set in `.coagent/chat.json`:
+```json
+{ "provider": "local", "model": "custom", "apiUrl": "https://internal-llm.corp:8080/v1/chat/completions" }
+```
+
+## Security Compliance
+
+CoAgent provides enterprise-grade security for sensitive deployments:
+
+### Data Exfiltration Prevention
+- Sensitive data patterns (passwords, API keys, tokens) are automatically redacted
+- Domain allowlist controls outbound data transfers
+- Blocked patterns prevent leakage of credentials in agent outputs
+
+### Permission Levels
+| Level | Read | Write | Description |
+| --- | --- | --- | --- |
+| `read-only` | ✓ | ✗ | No file modifications |
+| `scoped-write` | ✓ | scoped | Only within assigned file scope |
+| `review-gate` | ✓ | ✗ | Requires explicit approval |
+| `trusted` | ✓ | ✓ | Full access |
+
+### Audit Trail
+- All permission checks and data transfers are logged with SHA-256 integrity hashes
+- Audit logs stored in `.coagent/audit/audit-YYYY-MM-DD.log`
+- Integrity verification detects tampering: `/audit` command verifies hash chain
+
+```bash
+# In TUI:
+/security              # View security config
+/audit                 # View today's audit log
+/audit 2025-01-15      # View specific date
+```
+
+Configuration via `.coagent/security.json`:
+```json
+{
+  "dataExfiltrationProtection": true,
+  "allowedDomains": ["internal.corp"],
+  "defaultPermission": "scoped-write",
+  "auditLogEnabled": true
+}
+```
 
 ## Agent Tools & Skills
 

@@ -48,6 +48,27 @@ const PROVIDERS: Record<string, ChatProvider> = {
     envKey: "OPENAI_API_KEY",
     models: ["gpt-4o", "gpt-4o-mini", "o3-mini"],
   },
+  local: {
+    id: "local",
+    name: "Local / On-Prem (OpenAI-compatible)",
+    apiUrl: "http://localhost:8080/v1/chat/completions",
+    envKey: "LOCAL_API_KEY",
+    models: ["custom"],
+  },
+  ollama: {
+    id: "ollama",
+    name: "Ollama (Local)",
+    apiUrl: "http://localhost:11434/v1/chat/completions",
+    envKey: "OLLAMA_API_KEY",
+    models: ["qwen2.5:7b", "deepseek-r1:7b", "llama3.2:7b"],
+  },
+  vllm: {
+    id: "vllm",
+    name: "vLLM (Private Deploy)",
+    apiUrl: "http://localhost:8000/v1/chat/completions",
+    envKey: "VLLM_API_KEY",
+    models: ["custom"],
+  },
 };
 
 export function getProviders(): Record<string, ChatProvider> {
@@ -62,6 +83,7 @@ interface ChatConfig {
   provider: string;
   model: string;
   apiKey?: string;
+  apiUrl?: string;
 }
 
 function configPath(cwd: string): string {
@@ -85,6 +107,7 @@ export function loadChatConfig(cwd: string): ChatConfig {
       provider: cwdCfg.provider,
       model: cwdCfg.model,
       apiKey: cwdCfg.apiKey ?? pkgCfg.apiKey,
+      apiUrl: cwdCfg.apiUrl ?? pkgCfg.apiUrl,
     };
   }
   return cwdCfg ?? pkgCfg ?? { provider: "deepseek", model: "deepseek-chat" };
@@ -104,6 +127,9 @@ export function resolveApiKey(cwd: string): string | undefined {
   if (provider) {
     const env = process.env[provider.envKey];
     if (env) return env;
+  }
+  if (config.provider === "local" || config.provider === "ollama") {
+    return "no-key-required";
   }
   return undefined;
 }
@@ -127,10 +153,10 @@ export async function chat(
   }
 
   if (config.provider === "anthropic") {
-    return chatAnthropic(messages, config.model, apiKey, provider.apiUrl, onToken);
+    return chatAnthropic(messages, config.model, apiKey, config.apiUrl ?? provider.apiUrl, onToken);
   }
 
-  return chatOpenAICompatible(messages, config.model, apiKey, provider.apiUrl, onToken);
+  return chatOpenAICompatible(messages, config.model, apiKey, config.apiUrl ?? provider.apiUrl, onToken);
 }
 
 export interface ToolCall {
@@ -168,15 +194,16 @@ export async function runAgent(
 		throw new Error("No API key. Set " + provider.envKey + " or use /model " + config.provider + " <model> <key>");
 	}
 	if (config.provider === "anthropic") {
-		return chatAnthropic(messages, config.model, apiKey, provider.apiUrl, callbacks?.onText);
+		return chatAnthropic(messages, config.model, apiKey, config.apiUrl ?? provider.apiUrl, callbacks?.onText);
 	}
 
 	const workingMessages: ChatMessage[] = [...messages];
 	const openaiTools = toolsToOpenAI(tools);
+	const effectiveUrl = config.apiUrl ?? provider.apiUrl;
 
 	for (let turn = 0; turn < maxTurns; turn++) {
 		const { text, toolCalls } = await chatWithTools(
-			workingMessages, config.model, apiKey, provider.apiUrl, openaiTools, callbacks?.onText,
+			workingMessages, config.model, apiKey, effectiveUrl, openaiTools, callbacks?.onText,
 		);
 
 		if (text) {

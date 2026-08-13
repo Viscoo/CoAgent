@@ -24,6 +24,8 @@ import { chat, loadChatConfig, saveChatConfig, resolveApiKey, getProviders, type
 import { resolveModelInput, findConfigFile } from "./model-config.js";
 import { loadSkills, buildSkillsSystemPrompt } from "./skills.js";
 import { loadMcpConfig, McpClient, type McpServerConfig } from "./mcp.js";
+import { RAGKnowledgeBase } from "../core/rag.js";
+import { SecurityGuard } from "../core/security.js";
 
 const VERSION = "0.2.0";
 
@@ -167,6 +169,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
 		dryRun: false,
 		adapter,
 		maxRetries: options.retries ?? 2,
+		ragEnabled: true,
+		securityConfig: SecurityGuard.loadConfig(options.cwd) ?? undefined,
 		onProgress: (event) => {
 			hubBridge?.reportProgress(event);
 			const agent = AGENT_ROLES.find((a) => a.id === event.role);
@@ -533,6 +537,87 @@ export async function startTui(options: TuiOptions): Promise<void> {
 			return;
 		}
 
+		if (cmd?.name === "/rag") {
+			const rag = new RAGKnowledgeBase(options.cwd);
+			const subCmd = rest.split(/\s+/)[0] ?? "stats";
+			if (subCmd === "index") {
+				const target = rest.split(/\s+/).slice(1).join(" ") || options.cwd;
+				addText(C.text("◈") + " Indexing " + C.secondary(target) + "…");
+				const count = rag.indexDirectory(target);
+				const stats = rag.getStats();
+				addText(C.success("✓") + " Indexed " + count + " files → " + stats.chunks + " chunks");
+			} else if (subCmd === "search") {
+				const query = rest.split(/\s+/).slice(1).join(" ");
+				if (!query) { addText(C.error("✗") + " Usage: /rag search <query>"); }
+				else {
+					const results = rag.search(query, 5);
+					if (results.length === 0) { addText(C.muted("No results.")); }
+					else {
+						addText(chalk.bold.white("Results:"));
+						for (const r of results) {
+							addText("  " + C.secondary(r.score.toFixed(2)) + " " + C.muted(r.docPath));
+							addText("    " + C.text(r.chunk.text.slice(0, 120) + (r.chunk.text.length > 120 ? "…" : "")));
+						}
+					}
+				}
+			} else if (subCmd === "clear") {
+				rag.clear();
+				addText(C.success("✓") + " RAG index cleared.");
+			} else {
+				const stats = rag.getStats();
+				addText(chalk.bold.white("RAG Knowledge Base:"));
+				addText("  Documents: " + C.text(String(stats.documents)));
+				addText("  Chunks:    " + C.text(String(stats.chunks)));
+				addText("  Updated:   " + C.muted(stats.updatedAt));
+				addBlank();
+				addText(C.muted("Usage: /rag index [dir] | /rag search <query> | /rag clear"));
+			}
+			addBlank();
+			return;
+		}
+
+		if (cmd?.name === "/audit") {
+			const secConfig = SecurityGuard.loadConfig(options.cwd);
+			const guard = new SecurityGuard(options.cwd, secConfig ?? undefined);
+			const date = rest || undefined;
+			const entries = guard.getAuditLog(date);
+			if (entries.length === 0) {
+				addText(C.muted("No audit entries."));
+			} else {
+				addText(chalk.bold.white("Audit Log (" + entries.length + " entries):"));
+				for (const e of entries.slice(-20)) {
+					const icon = e.allowed ? C.success("✓") : C.error("✗");
+					addText("  " + icon + " " + C.muted(e.timestamp.slice(11, 19)) +
+						" " + C.text(e.actor) + " " + C.secondary(e.action) +
+						" " + C.muted(e.resource.slice(0, 40)) +
+						(e.reason ? " " + C.error(e.reason) : ""));
+				}
+				if (entries.length > 20) addText(C.muted("  … (" + (entries.length - 20) + " more)"));
+				const integrity = guard.verifyAuditIntegrity(date);
+				addBlank();
+				addText("Integrity: " + (integrity.valid ? C.success("✓ verified") : C.error("✗ tampered: " + integrity.tampered.join(", "))));
+			}
+			addBlank();
+			return;
+		}
+
+		if (cmd?.name === "/security") {
+			const secConfig = SecurityGuard.loadConfig(options.cwd);
+			const guard = new SecurityGuard(options.cwd, secConfig ?? undefined);
+			const cfg = guard.getConfig();
+			addText(chalk.bold.white("Security Configuration:"));
+			addText("  Data exfiltration protection: " + (cfg.dataExfiltrationProtection ? C.success("✓ enabled") : C.error("✗ disabled")));
+			addText("  Audit logging: " + (cfg.auditLogEnabled ? C.success("✓ enabled") : C.error("✗ disabled")));
+			addText("  Default permission: " + C.text(cfg.defaultPermission));
+			addText("  Allowed domains: " + (cfg.allowedDomains.length > 0 ? C.text(cfg.allowedDomains.join(", ")) : C.muted("(all)")));
+			addText("  Blocked patterns: " + C.muted(cfg.blockedPatterns.length + " patterns"));
+			addText("  Redaction patterns: " + C.muted(cfg.redactPatterns.length + " patterns"));
+			addBlank();
+			addText(C.muted("Config: .coagent/security.json"));
+			addBlank();
+			return;
+		}
+
 		if (cmd?.name === "/plan") {
 			if (!rest) { addText(C.error("✗") + " /plan requires a goal. Usage: /plan <goal>"); addBlank(); return; }
 			addText(C.text("◈") + " Planning: " + rest);
@@ -658,8 +743,25 @@ export async function startTui(options: TuiOptions): Promise<void> {
 		addText(badge + " Finished: " + run.id.slice(0, 12) + "…");
 		addText("  Goal:   " + run.goal);
 		addText("  Status: " + C.muted(run.status));
-		if (run.mergePlan) addText("  Merge:  " + C.muted(run.mergePlan.status + (run.mergePlan.conflicts.length > 0 ? " (" + run.mergePlan.conflicts.length + " conflicts)" : "")));
-		if (run.riskReport) addText("  Risk:   " + C.muted(run.riskReport.status + " (" + (run.riskReport.risks?.length ?? 0) + " risks)"));
+		if (run.mergePlan) {
+			const mergeStatus = run.mergePlan.status === "clean" ? C.success(run.mergePlan.status)
+				: run.mergePlan.status === "blocked" ? C.error(run.mergePlan.status)
+				: C.warning(run.mergePlan.status);
+			addText("  Merge:  " + mergeStatus + C.muted(run.mergePlan.conflicts.length > 0 ? " (" + run.mergePlan.conflicts.length + " conflicts)" : ""));
+			if (run.mergePlan.modifiedFiles.length > 0) {
+				addText("  Files:  " + C.muted(run.mergePlan.modifiedFiles.join(", ").slice(0, 80)));
+			}
+		}
+		if (run.riskReport) {
+			const riskStatus = run.riskReport.status === "pass" ? C.success("pass")
+				: run.riskReport.status === "fail" ? C.error("fail")
+				: C.warning("warn");
+			addText("  Risk:   " + riskStatus + C.muted(" (" + (run.riskReport.risks?.length ?? 0) + " risks)"));
+			for (const risk of run.riskReport.risks ?? []) {
+				const icon = risk.severity === "high" ? C.error("●") : risk.severity === "medium" ? C.warning("●") : C.muted("●");
+				addText("         " + icon + " " + C.text(risk.title) + " " + C.muted(risk.detail.slice(0, 60)));
+			}
+		}
 		addText("  Tasks:");
 		for (const task of run.taskGraph.tasks) {
 			const agent = AGENT_ROLES.find((a) => a.id === task.role);

@@ -22,6 +22,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/compact", description: "Compact conversation history", handler: async () => {} },
   { name: "/diff", description: "View file changes from last run", handler: async () => {} },
   { name: "/config", description: "Show or edit configuration", handler: async () => {} },
+  { name: "/rag", description: "Manage RAG knowledge base (index/search/stats)", handler: async () => {} },
+  { name: "/audit", description: "View audit log", handler: async () => {} },
+  { name: "/security", description: "Show security configuration", handler: async () => {} },
   { name: "/exit", aliases: ["/quit", "/q", ":q"], description: "Exit CoAgent", handler: async () => {} },
 ];
 

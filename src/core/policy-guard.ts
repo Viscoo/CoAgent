@@ -1,5 +1,6 @@
 import { type AgentSpec } from "./agent-registry.js";
-import { type TaskNode } from "./types.js";
+import { type TaskNode, type PermissionMode } from "./types.js";
+import { SecurityGuard } from "./security.js";
 
 export interface PolicyViolation {
   severity: "medium" | "high";
@@ -8,6 +9,12 @@ export interface PolicyViolation {
 }
 
 export class PolicyGuard {
+  private readonly security: SecurityGuard | null = null;
+
+  constructor(security?: SecurityGuard) {
+    this.security = security ?? null;
+  }
+
   validateDiff(task: TaskNode, agent: AgentSpec, diffFiles: string[]): PolicyViolation[] {
     const violations: PolicyViolation[] = [];
 
@@ -31,6 +38,40 @@ export class PolicyGuard {
     }
 
     return violations;
+  }
+
+  validatePermission(
+    actor: string,
+    action: string,
+    resource: string,
+    permission: PermissionMode,
+    task?: TaskNode,
+  ): { allowed: boolean; reason?: string } {
+    if (this.security) {
+      return this.security.checkPermission(actor, action, resource, permission, task);
+    }
+
+    if (permission === "read-only" && action !== "read") {
+      return { allowed: false, reason: "read-only permission denies write operations" };
+    }
+    if (permission === "review-gate" && action !== "read") {
+      return { allowed: false, reason: "review-gate requires explicit approval" };
+    }
+    return { allowed: true };
+  }
+
+  checkDataOutput(content: string, destination?: string): { allowed: boolean; sanitized: string; reason?: string } {
+    if (this.security) {
+      return this.security.checkDataExfiltration(content, destination);
+    }
+    return { allowed: true, sanitized: content };
+  }
+
+  redact(content: string): string {
+    if (this.security) {
+      return this.security.redactContent(content);
+    }
+    return content;
   }
 }
 
